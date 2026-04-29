@@ -7,9 +7,10 @@ interface WebcamFeedProps {
   onFrame: (r: number, g: number, b: number) => void;
   onFaceDetected: (roi: { x: number; y: number; width: number; height: number } | null) => void;
   onCameraError: (error: string) => void;
+  onVideoSize?: (width: number, height: number) => void;
 }
 
-export default function WebcamFeed({ onFrame, onFaceDetected, onCameraError }: WebcamFeedProps) {
+export default function WebcamFeed({ onFrame, onFaceDetected, onCameraError, onVideoSize }: WebcamFeedProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const { detectFace, loading: detectorLoading } = useFaceDetection();
@@ -54,6 +55,9 @@ export default function WebcamFeed({ onFrame, onFaceDetected, onCameraError }: W
 
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
+      if (canvas.width > 0 && canvas.height > 0) {
+        onVideoSize?.(canvas.width, canvas.height);
+      }
       ctx.drawImage(video, 0, 0);
 
       const now = performance.now();
