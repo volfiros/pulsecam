@@ -45,15 +45,25 @@ class SignalProcessor:
         if len(self._sample_times) < 20:
             return
         sample_times = list(self._sample_times)
-        recent = sample_times[-60:]
+        recent = sample_times[-120:]
+        total_span = recent[-1] - recent[0]
+        if total_span < 2.0:
+            return
+        n_recent = len(recent)
+        if n_recent < 5:
+            return
+        avg_fps = (n_recent - 1) / total_span
         intervals = np.diff(recent)
-        valid = intervals[(intervals > 0.005) & (intervals < 0.1)]
+        valid = intervals[intervals > 0.001]
         if len(valid) < 5:
+            self._effective_fps = max(6.0, min(self._nominal_fps, avg_fps))
             return
         median_interval = float(np.median(valid))
-        if median_interval < 0.005:
+        if median_interval < 0.003:
+            self._effective_fps = avg_fps
             return
-        self._effective_fps = max(10.0, min(60.0, 1.0 / median_interval))
+        median_fps = 1.0 / median_interval
+        self._effective_fps = max(6.0, min(self._nominal_fps, (avg_fps + median_fps) / 2.0))
 
     def _detrend_ma(self, signal: np.ndarray, window_seconds: float = 2.0) -> np.ndarray:
         window = max(int(self._nominal_fps * window_seconds), 3)
@@ -94,7 +104,7 @@ class SignalProcessor:
         min_len = 3 * (self.filter_order + 1)
         if len(signal) < min_len:
             return signal
-        fps = max(self._effective_fps, self._nominal_fps * 0.5)
+        fps = max(self._effective_fps, 8.0)
         nyquist = fps / 2.0
         low = self.low_hz / nyquist
         high = self.high_hz / nyquist
@@ -179,35 +189,44 @@ class SignalProcessor:
         if n < self._effective_fps * 2:
             return 0.0, 0.0
 
-        ac_bpm, ac_quality = self._autocorrelation_bpm(signal)
         welch_bpm, welch_prom = self._welch_bpm(signal)
+        ac_bpm, ac_quality = self._autocorrelation_bpm(signal)
 
-        ac_valid = 40.0 <= ac_bpm <= 220.0
         welch_valid = 40.0 <= welch_bpm <= 220.0 and welch_prom > 0.08
+        ac_valid = 40.0 <= ac_bpm <= 220.0
 
-        if not ac_valid and not welch_valid:
+        if not welch_valid and not ac_valid:
             return 0.0, 0.0
-
-        if ac_valid and not welch_valid:
-            return ac_bpm, ac_quality * 0.8
 
         if welch_valid and not ac_valid:
             return welch_bpm, welch_prom
 
+        if ac_valid and not welch_valid:
+            low_cutoff = max(0.5 / self._effective_fps * 60, 45)
+            if ac_bpm < low_cutoff:
+                return ac_bpm, ac_quality * 0.4
+            return ac_bpm, ac_quality * 0.6
+
         ratio = max(ac_bpm, welch_bpm) / min(ac_bpm, welch_bpm) if min(ac_bpm, welch_bpm) > 1e-10 else 999
 
-        if ratio < 1.2:
+        if ratio < 1.15:
             bpm = (ac_bpm + welch_bpm) / 2.0
-            rating = max(ac_quality, welch_prom) * 1.2
-        elif 1.8 <= ratio <= 2.2:
-            bpm = min(ac_bpm, welch_bpm)
-            rating = max(ac_quality, welch_prom) * 0.7
-        elif 1.4 <= ratio <= 1.7:
-            bpm = min(ac_bpm, welch_bpm)
-            rating = max(ac_quality, welch_prom) * 0.5
+            rating = max(ac_quality, welch_prom) * 1.3
+        elif ratio < 1.3:
+            bpm = (ac_bpm + welch_bpm) / 2.0
+            rating = max(ac_quality, welch_prom)
+        elif 1.7 <= ratio <= 2.4:
+            if welch_prom >= ac_quality:
+                bpm = welch_bpm
+            else:
+                bpm = max(ac_bpm, welch_bpm)
+            rating = max(ac_quality, welch_prom) * 0.6
         else:
-            bpm = ac_bpm if ac_quality >= welch_prom else welch_bpm
-            rating = max(ac_quality, welch_prom) * 0.5
+            if welch_prom > ac_quality * 2.0:
+                bpm = welch_bpm
+            else:
+                bpm = ac_bpm if ac_quality >= welch_prom * 2.0 else welch_bpm
+            rating = max(ac_quality, welch_prom) * 0.4
 
         return bpm, rating
 
@@ -221,12 +240,14 @@ class SignalProcessor:
             return 80.0
         return 10.0 * np.log10(signal_var / residual_var)
 
-    def _get_status(self, n_samples: int, snr: float, bpm: float, bpm_rating: float) -> str:
+    def _get_status(self, n_samples: int, snr: float, bpm: float, bpm_rating: float, agreement: float) -> str:
         if n_samples < self.min_calibrate_samples:
             return "buffering"
         if n_samples < self.min_measuring_samples:
             return "calibrating"
         if snr < 1.0 or bpm < 40 or bpm > 220 or bpm_rating < 0.03:
+            return "poor_signal"
+        if agreement < 0.3:
             return "poor_signal"
         return "measuring"
 
@@ -340,10 +361,10 @@ class SignalProcessor:
             agreement = 0.0
 
         snr = max(self._compute_snr(g_filtered, g_signal), self._compute_snr(chrom_filtered, chrom))
-        status = self._get_status(n, snr, bpm, bpm_rating)
+        status = self._get_status(n, snr, bpm, bpm_rating, agreement)
 
         temporal_consistency = 0.0
-        if status == "measuring" and bpm > 0:
+        if bpm > 0 and agreement >= 0.3 and bpm_rating > 0.08:
             if len(self.bpm_history) > 0:
                 median_bpm = float(np.median(self.bpm_history))
                 if median_bpm > 0:
@@ -360,9 +381,12 @@ class SignalProcessor:
                     if weight > 0:
                         self.bpm_history.append(bpm)
                         self.confidence_history.append(weight)
-            else:
+            elif g_valid and c_valid:
                 self.bpm_history.append(bpm)
                 self.confidence_history.append(0.7)
+            elif bpm_rating > 0.25:
+                self.bpm_history.append(bpm)
+                self.confidence_history.append(0.5)
 
             if len(self.bpm_history) > 3:
                 recent = list(self.bpm_history)[-10:]
@@ -392,5 +416,6 @@ class SignalProcessor:
             "confidence": confidence,
             "waveform": display_waveform[-450:].tolist() if len(display_waveform) > 450 else display_waveform.tolist(),
             "status": status,
+            "effective_fps": round(self._effective_fps, 1),
         }
         return self._last_result

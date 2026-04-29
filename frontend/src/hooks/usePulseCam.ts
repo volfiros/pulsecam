@@ -71,6 +71,10 @@ export function usePulseCam() {
         setWaveform(data.waveform);
         setStatus(data.status);
 
+        if (data.effective_fps) {
+          console.log(`[PulseCam] BPM=${data.raw_bpm} conf=${data.confidence.toFixed(2)} fps=${data.effective_fps} status=${data.status}`);
+        }
+
         const readingBpm = data.raw_bpm > 0 ? data.raw_bpm : data.bpm;
         if (readingBpm >= 40 && readingBpm <= 220 && data.confidence > 0.05) {
           sessionReadings.current.push({ bpm: readingBpm, confidence: data.confidence });

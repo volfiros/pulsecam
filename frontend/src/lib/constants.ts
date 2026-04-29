@@ -33,4 +33,5 @@ export interface WSResponse {
   confidence: number;
   waveform: number[];
   status: MeasurementStatus;
+  effective_fps: number;
 }
