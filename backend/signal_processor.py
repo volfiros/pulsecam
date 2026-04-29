@@ -5,7 +5,7 @@ import time
 
 
 class SignalProcessor:
-    def __init__(self, fps: int = 30, buffer_seconds: float = 15.0):
+    def __init__(self, fps: int = 30, buffer_seconds: float = 10.0):
         self._nominal_fps = fps
         self._effective_fps = float(fps)
         self.capacity = int(fps * buffer_seconds)
@@ -18,12 +18,13 @@ class SignalProcessor:
         self.low_hz = 0.5
         self.high_hz = 5.0
         self.filter_order = 3
-        self.min_calibrate_samples: int = fps * 5
-        self.min_measuring_samples: int = fps * 10
+        self.min_calibrate_samples: int = fps * 4
+        self.min_measuring_samples: int = fps * 7
         self.bpm_history: deque[float] = deque(maxlen=30)
         self.confidence_history: deque[float] = deque(maxlen=30)
         self._ema_bpm: float = 0.0
         self._ema_alpha: float = 0.2
+        self._prev_status: str = "buffering"
         self._last_result: dict = {
             "bpm": 0,
             "raw_bpm": 0.0,
@@ -245,7 +246,7 @@ class SignalProcessor:
             return "buffering"
         if n_samples < self.min_measuring_samples:
             return "calibrating"
-        if snr < 1.0 or bpm < 40 or bpm > 220 or bpm_rating < 0.03:
+        if snr < 1.0 or bpm < 50 or bpm > 220 or bpm_rating < 0.03:
             return "poor_signal"
         if agreement < 0.3:
             return "poor_signal"
@@ -263,7 +264,7 @@ class SignalProcessor:
         if not self._session_bpms:
             return {"avg_bpm": 0, "avg_confidence": 0.0, "reading_count": 0}
 
-        valid_pairs = [(b, c) for b, c in zip(self._session_bpms, self._session_confidences) if c > 0.05 and 40 <= b <= 220]
+        valid_pairs = [(b, c) for b, c in zip(self._session_bpms, self._session_confidences) if c > 0.05 and 50 <= b <= 220]
         if not valid_pairs:
             return {"avg_bpm": 0, "avg_confidence": 0.0, "reading_count": 0}
 
@@ -363,8 +364,12 @@ class SignalProcessor:
         snr = max(self._compute_snr(g_filtered, g_signal), self._compute_snr(chrom_filtered, chrom))
         status = self._get_status(n, snr, bpm, bpm_rating, agreement)
 
+        if status == "measuring" and self._prev_status != "measuring":
+            self.bpm_history.clear()
+        self._prev_status = status
+
         temporal_consistency = 0.0
-        if bpm > 0 and agreement >= 0.3 and bpm_rating > 0.08:
+        if bpm > 0 and agreement >= 0.3 and bpm_rating > 0.08 and status != "poor_signal":
             if len(self.bpm_history) > 0:
                 median_bpm = float(np.median(self.bpm_history))
                 if median_bpm > 0:
@@ -399,7 +404,7 @@ class SignalProcessor:
         else:
             display_bpm = bpm
 
-        if 40 <= display_bpm <= 220 and confidence > 0.05:
+        if 50 <= display_bpm <= 220 and confidence > 0.05:
             self._session_bpms.append(display_bpm)
             self._session_confidences.append(confidence)
 
