@@ -1,5 +1,5 @@
-fastapi==0.115.12
-uvicorn[standard]==0.34.0
-numpy==2.2.5
-scipy==1.15.2
-pydantic==2.11.3
+fastapi
+uvicorn[standard]
+numpy
+scipy
+pydantic
