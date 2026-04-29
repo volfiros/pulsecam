@@ -7,9 +7,6 @@ export const HEALTH_CHECK_URL = `${window.location.protocol}//${window.location.
 export const WS_URL = `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}/ws`;
 export const MAX_WS_RETRIES = 5;
 export const WS_RETRY_BASE_MS = 2000;
-export const ROI_WIDTH_RATIO = 0.8;
-export const ROI_HEIGHT_RATIO = 0.4;
-export const ROI_OFFSET_UP_RATIO = 0.4;
 
 export type Phase =
   | "idle"

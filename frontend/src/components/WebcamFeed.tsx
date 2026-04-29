@@ -1,6 +1,6 @@
 import { useRef, useEffect } from "react";
 import { useFaceDetection } from "../hooks/useFaceDetection";
-import { computeForeheadROI, extractRGBMeans } from "../lib/extractROI";
+import { computeFaceROI, extractRGBMeans } from "../lib/extractROI";
 import { FPS } from "../lib/constants";
 
 interface WebcamFeedProps {
@@ -94,7 +94,7 @@ export default function WebcamFeed({ onFrame, onFaceDetected, onCameraError, onV
         const face = detectFace(video, now);
 
         if (face) {
-          const roi = computeForeheadROI(
+          const roi = computeFaceROI(
             face.leftEye,
             face.rightEye,
             canvas.width,

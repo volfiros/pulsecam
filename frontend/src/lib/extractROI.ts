@@ -1,11 +1,9 @@
-import { ROI_WIDTH_RATIO, ROI_HEIGHT_RATIO, ROI_OFFSET_UP_RATIO } from "./constants";
-
 interface Keypoint {
   x: number;
   y: number;
 }
 
-export function computeForeheadROI(
+export function computeFaceROI(
   leftEye: Keypoint,
   rightEye: Keypoint,
   canvasWidth: number,
@@ -13,25 +11,24 @@ export function computeForeheadROI(
 ): { x: number; y: number; width: number; height: number } {
   const midX = (leftEye.x + rightEye.x) / 2;
   const midY = (leftEye.y + rightEye.y) / 2;
-  const interEyeDist = Math.sqrt(
-    (rightEye.x - leftEye.x) ** 2 + (rightEye.y - leftEye.y) ** 2
-  );
+  const dx = rightEye.x - leftEye.x;
+  const dy = rightEye.y - leftEye.y;
+  const interEyeDist = Math.sqrt(dx * dx + dy * dy);
 
-  const width = interEyeDist * ROI_WIDTH_RATIO;
-  const height = interEyeDist * ROI_HEIGHT_RATIO;
-  const offsetX = midX * canvasWidth;
-  const offsetY = midY * canvasHeight - interEyeDist * ROI_OFFSET_UP_RATIO * canvasHeight;
+  const roiCenterX = midX * canvasWidth;
+  const roiCenterY = (midY + interEyeDist * 0.55) * canvasHeight;
 
-  const x = Math.max(0, offsetX - width * canvasWidth / 2);
-  const y = Math.max(0, offsetY - height * canvasHeight);
-  const w = width * canvasWidth;
-  const h = height * canvasHeight;
+  const roiWidth = interEyeDist * 1.3 * canvasWidth;
+  const roiHeight = interEyeDist * 0.7 * canvasHeight;
+
+  const x = Math.max(0, roiCenterX - roiWidth / 2);
+  const y = Math.max(0, roiCenterY - roiHeight / 2);
 
   return {
     x,
     y,
-    width: Math.min(w, canvasWidth - x),
-    height: Math.min(h, canvasHeight - y),
+    width: Math.min(roiWidth, canvasWidth - x),
+    height: Math.min(roiHeight, canvasHeight - y),
   };
 }
 
