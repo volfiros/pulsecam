@@ -9,23 +9,26 @@ interface StartButtonProps {
 export default function StartButton({ onStart, onStop, isMeasuring }: StartButtonProps) {
   if (isMeasuring) {
     return (
-      <button
+      <motion.button
+        initial={{ scale: 0.9, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        transition={{ type: "spring", stiffness: 200 }}
+        whileHover={{ scale: 1.02 }}
+        whileTap={{ scale: 0.98 }}
         onClick={onStop}
-        className="fixed top-6 right-6 px-4 py-2 text-xs tracking-wide cursor-pointer"
+        className="fixed top-6 right-6 text-white font-semibold text-sm cursor-pointer"
         style={{
-          background: "rgba(255, 255, 255, 0.03)",
-          border: "1px solid rgba(255, 255, 255, 0.08)",
-          borderRadius: "9999px",
-          color: "rgba(255, 255, 255, 0.5)",
-          fontFamily: "var(--font-mono)",
-          letterSpacing: "0.1em",
-          textTransform: "uppercase",
-          zIndex: 10,
-          transition: "all 150ms ease",
+          fontFamily: "var(--font-sans)",
+          zIndex: 50,
+          backgroundColor: "var(--color-danger)",
+          borderRadius: "10px",
+          padding: "12px 24px",
+          border: "none",
+          boxShadow: "0 4px 12px rgba(0, 0, 0, 0.2)"
         }}
       >
         Stop
-      </button>
+      </motion.button>
     );
   }
 

@@ -25,37 +25,40 @@ export default function InfoDialog() {
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 bg-black/60" style={{ zIndex: 50 }} />
         <Dialog.Content
-          className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md rounded-[24px] p-6"
+          className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md"
           style={{
             zIndex: 51,
-            background: "rgba(0, 0, 0, 0.75)",
-            backdropFilter: "blur(12px)",
-            border: "1px solid rgba(255, 255, 255, 0.15)",
-            boxShadow: "0 8px 24px rgba(0, 0, 0, 0.4)",
+            boxShadow: "0 4px 12px rgba(0, 0, 0, 0.2)",
+            backgroundColor: "var(--color-bg-card)",
+            border: "1px solid rgba(255, 255, 255, 0.1)",
+            borderRadius: "12px",
+            padding: "32px",
           }}
         >
           <Dialog.Title
-            className="text-lg font-semibold text-text mb-4"
-            style={{ fontFamily: "var(--font-sans)" }}
+            className="font-semibold text-text"
+            style={{ fontFamily: "var(--font-sans)", fontSize: "20px", marginBottom: "24px" }}
           >
             Tips for Accurate Reading
           </Dialog.Title>
-          <ul className="space-y-3">
+          <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
             {TIPS.map((tip, i) => (
-              <li key={i} className="flex gap-3 text-sm text-text-secondary">
-                <span className="text-accent mt-0.5">•</span>
+              <li key={i} style={{ display: "flex", gap: "16px", marginBottom: i === TIPS.length - 1 ? 0 : "16px", fontSize: "14px", color: "var(--color-text-secondary)", lineHeight: "1.6" }}>
+                <span className="text-accent font-bold" style={{ marginTop: "2px" }}>•</span>
                 <span>{tip}</span>
               </li>
             ))}
           </ul>
-          <Dialog.Close asChild>
-            <button
-              className="mt-6 w-full py-2 rounded-full text-sm cursor-pointer"
-              style={{ background: "rgba(255, 255, 255, 0.03)", border: "1px solid rgba(255, 255, 255, 0.08)", color: "rgba(255, 255, 255, 0.7)", fontFamily: "var(--font-sans)" }}
-            >
-              Got it
-            </button>
-          </Dialog.Close>
+          <div style={{ marginTop: "32px", paddingTop: "24px", borderTop: "1px solid rgba(255, 255, 255, 0.05)" }}>
+            <Dialog.Close asChild>
+              <button
+                className="btn-ghost w-full text-sm cursor-pointer"
+                style={{ padding: "12px" }}
+              >
+                Got it
+              </button>
+            </Dialog.Close>
+          </div>
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

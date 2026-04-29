@@ -2,18 +2,18 @@ import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { usePulseCam } from "../hooks/usePulseCam";
 import WebcamFeed from "../components/WebcamFeed";
-import BPMDisplay from "../components/BPMDisplay";
 import WaveformChart from "../components/WaveformChart";
-import StatusPill from "../components/StatusPill";
+import MeasureHeader from "../components/MeasureHeader";
+import ResultsScreen from "../components/ResultsScreen";
 import PulseRing from "../components/PulseRing";
 import StartButton from "../components/StartButton";
 import InfoDialog from "../components/InfoDialog";
 import ROIOverlay from "../components/ROIOverlay";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 
 export default function MeasurePage() {
   const navigate = useNavigate();
-  const { phase, bpm, confidence, waveform, status, sendFrame, start, stop } = usePulseCam();
+  const { phase, bpm, finalBpm, finalConfidence, confidence, waveform, status, duration, sendFrame, start, stop } = usePulseCam();
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [roi, setRoi] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
   const [videoSize, setVideoSize] = useState<{ w: number; h: number } | null>(null);
@@ -42,8 +42,12 @@ export default function MeasurePage() {
 
   const isMeasuring = phase === "measuring";
 
+  useEffect(() => {
+    start();
+  }, [start]);
+
   return (
-    <div className="relative w-screen h-screen overflow-hidden bg-bg-primary">
+    <div className="relative w-screen h-screen overflow-hidden bg-background">
       {isMeasuring && !cameraError && (
         <WebcamFeed
           onFrame={handleFrame}
@@ -58,30 +62,27 @@ export default function MeasurePage() {
       )}
 
       <AnimatePresence mode="wait">
-        {phase === "idle" && !cameraError && (
-          <motion.div
-            key="idle"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="relative z-10 flex flex-col items-center justify-center h-full"
-          >
-            <StartButton onStart={start} onStop={stop} isMeasuring={false} />
-          </motion.div>
-        )}
-
         {phase === "checking" && (
           <motion.div
             key="checking"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="relative z-10 flex flex-col items-center justify-center h-full"
+            className="fixed inset-0 z-10 flex flex-col items-center justify-center"
           >
             <PulseRing />
-            <p className="mt-6 text-text-secondary" style={{ fontFamily: "var(--font-mono)", fontSize: "11px", letterSpacing: "0.1em", textTransform: "uppercase" }}>
-              Checking server...
-            </p>
+          </motion.div>
+        )}
+
+        {phase === "waking" && (
+          <motion.div
+            key="waking"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-10 flex flex-col items-center justify-center"
+          >
+            <PulseRing />
           </motion.div>
         )}
 
@@ -91,36 +92,21 @@ export default function MeasurePage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="relative z-10 flex flex-col items-center justify-center h-full"
+            className="fixed inset-0 z-10 flex flex-col items-center justify-center"
           >
             <PulseRing />
-            <p className="mt-6 text-text-secondary" style={{ fontFamily: "var(--font-mono)", fontSize: "11px", letterSpacing: "0.1em", textTransform: "uppercase" }}>
-              Connecting...
-            </p>
           </motion.div>
         )}
 
-        {phase === "measuring" && !cameraError && (
-          <motion.div
-            key="measuring"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="relative z-10 flex flex-col items-center justify-center h-full pointer-events-none"
-          >
-            <BPMDisplay bpm={bpm} status={status} />
-            <div className="mt-4">
-              <StatusPill status={status} />
-            </div>
-            {confidence > 0 && (
-              <p
-                className="mt-2"
-                style={{ fontFamily: "var(--font-mono)", fontSize: "10px", letterSpacing: "0.1em", color: "rgba(255, 255, 255, 0.4)" }}
-              >
-                Confidence: {Math.round(confidence * 100)}%
-              </p>
-            )}
-          </motion.div>
+        {phase === "results" && (
+          <ResultsScreen
+            key="results"
+            bpm={finalBpm}
+            confidence={finalConfidence}
+            duration={duration}
+            onNewMeasurement={start}
+            onBackToHome={() => navigate("/")}
+          />
         )}
 
         {phase === "error" && (
@@ -129,7 +115,7 @@ export default function MeasurePage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="relative z-10 flex flex-col items-center justify-center h-full"
+            className="fixed inset-0 z-10 flex flex-col items-center justify-center"
           >
             <p className="text-danger text-lg font-medium" style={{ fontFamily: "var(--font-sans)" }}>
               Something went wrong
@@ -139,8 +125,7 @@ export default function MeasurePage() {
             </p>
             <button
               onClick={() => navigate("/")}
-              className="mt-6 px-6 py-2 cursor-pointer"
-              style={{ background: "rgba(255, 255, 255, 0.03)", border: "1px solid rgba(255, 255, 255, 0.08)", borderRadius: "9999px", color: "rgba(255, 255, 255, 0.7)", fontFamily: "var(--font-sans)", transition: "all 150ms ease" }}
+              className="btn-ghost mt-6 cursor-pointer"
             >
               Back to Home
             </button>
@@ -148,42 +133,37 @@ export default function MeasurePage() {
         )}
       </AnimatePresence>
 
+      {phase === "measuring" && !cameraError && (
+        <MeasureHeader bpm={bpm} status={status} confidence={confidence} />
+      )}
+
       {isMeasuring && waveform.length > 0 && (
-        <div className="fixed bottom-0 left-0 right-0 z-10 px-4 pb-4">
+        <div className="fixed bottom-0 left-0 right-0 z-10 px-6 pb-6">
           <WaveformChart data={waveform} />
         </div>
       )}
 
-      {isMeasuring && (
+      {isMeasuring && !cameraError && (
         <>
           <StartButton onStart={start} onStop={stop} isMeasuring={true} />
           <InfoDialog />
         </>
       )}
 
-      <button
-        onClick={() => navigate("/")}
-        className="fixed top-6 left-6 text-sm font-semibold cursor-pointer z-10"
-        style={{ fontFamily: "var(--font-sans)", color: "rgba(255, 255, 255, 0.5)", transition: "all 150ms ease" }}
-      >
-        PulseCam
-      </button>
-
       {cameraError && (
-        <div className="relative z-10 flex flex-col items-center justify-center h-full">
+        <div className="fixed inset-0 z-10 flex flex-col items-center justify-center">
           <p className="text-danger text-lg font-medium" style={{ fontFamily: "var(--font-sans)" }}>
             Camera access required
           </p>
           <p className="mt-2 text-text-secondary text-sm text-center max-w-sm px-4">
             {cameraError}. Please allow camera permission and try again.
           </p>
-          <button
-            onClick={() => { setCameraError(null); start(); }}
-            className="mt-6 px-6 py-2 cursor-pointer"
-            style={{ background: "rgba(16, 185, 129, 0.1)", border: "1px solid rgba(16, 185, 129, 0.3)", borderRadius: "9999px", color: "#10b981", fontFamily: "var(--font-sans)", transition: "all 150ms ease" }}
-          >
-            Retry
-          </button>
+            <button
+              onClick={() => { setCameraError(null); start(); }}
+              className="btn-accent mt-10 cursor-pointer"
+            >
+              Retry
+            </button>
         </div>
       )}
     </div>

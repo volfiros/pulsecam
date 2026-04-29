@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback } from "react";
+import { useRef, useEffect } from "react";
 import { useFaceDetection } from "../hooks/useFaceDetection";
 import { computeForeheadROI, extractRGBMeans } from "../lib/extractROI";
 import { FPS } from "../lib/constants";
@@ -13,30 +13,49 @@ interface WebcamFeedProps {
 export default function WebcamFeed({ onFrame, onFaceDetected, onCameraError, onVideoSize }: WebcamFeedProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   const { detectFace, loading: detectorLoading } = useFaceDetection();
   const animFrameRef = useRef<number>(0);
 
-  const startCamera = useCallback(async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 640, height: 480, frameRate: { ideal: FPS } },
-      });
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-      }
-    } catch (err) {
-      onCameraError(err instanceof Error ? err.message : "Camera access denied");
-    }
-  }, [onCameraError]);
-
   useEffect(() => {
-    startCamera();
+    let cancelled = false;
+
+    async function init() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: 640, height: 480, frameRate: { ideal: FPS } },
+        });
+        if (cancelled) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        const video = videoRef.current;
+        if (!video) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        streamRef.current = stream;
+        video.srcObject = stream;
+        await video.play();
+      } catch (err) {
+        if (!cancelled) {
+          onCameraError(err instanceof Error ? err.message : "Camera access denied");
+        }
+      }
+    }
+
+    init();
+
     return () => {
-      const stream = videoRef.current?.srcObject as MediaStream | null;
-      stream?.getTracks().forEach((t) => t.stop());
+      cancelled = true;
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+      if (videoRef.current) {
+        videoRef.current.srcObject = null;
+      }
+      cancelAnimationFrame(animFrameRef.current);
     };
-  }, [startCamera]);
+  }, [onCameraError]);
 
   useEffect(() => {
     if (detectorLoading) return;
@@ -52,6 +71,15 @@ export default function WebcamFeed({ onFrame, onFaceDetected, onCameraError, onV
 
     function loop() {
       if (!video || !ctx || !canvas) return;
+
+      if (
+        video.readyState < video.HAVE_CURRENT_DATA ||
+        video.videoWidth === 0 ||
+        video.videoHeight === 0
+      ) {
+        animFrameRef.current = requestAnimationFrame(loop);
+        return;
+      }
 
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;

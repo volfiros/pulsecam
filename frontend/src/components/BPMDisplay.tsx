@@ -1,31 +1,10 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { type MeasurementStatus } from "../lib/constants";
-import { useState, useEffect, useRef } from "react";
+import { useStableBpm } from "../hooks/useStableBpm";
 
 interface BPMDisplayProps {
   bpm: number;
   status: MeasurementStatus;
-}
-
-function useStableBpm(bpm: number): number {
-  const [stable, setStable] = useState(0);
-  const pendingRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    const rounded = Math.round(bpm);
-    if (rounded === stable) {
-      pendingRef.current = null;
-      return;
-    }
-    if (pendingRef.current === rounded) {
-      setStable(rounded);
-      pendingRef.current = null;
-    } else {
-      pendingRef.current = rounded;
-    }
-  }, [bpm, stable]);
-
-  return stable;
 }
 
 export default function BPMDisplay({ bpm, status }: BPMDisplayProps) {

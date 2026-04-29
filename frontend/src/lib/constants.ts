@@ -17,6 +17,7 @@ export type Phase =
   | "waking"
   | "connecting"
   | "measuring"
+  | "results"
   | "error";
 
 export type MeasurementStatus =
@@ -28,6 +29,7 @@ export type MeasurementStatus =
 
 export interface WSResponse {
   bpm: number;
+  raw_bpm: number;
   confidence: number;
   waveform: number[];
   status: MeasurementStatus;

@@ -1,8 +1,8 @@
-import { motion } from "framer-motion";
+import { motion, Variants } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import ShaderBackground from "../components/ShaderBackground";
 
-const sectionReveal = {
+const sectionReveal: Variants = {
   hidden: { opacity: 0, y: 60, filter: "blur(10px)" },
   visible: (i: number) => ({
     opacity: 1,
