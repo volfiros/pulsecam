@@ -1,5 +1,9 @@
+import sys
+import os
 import numpy as np
 import pytest
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "backend"))
 
 
 @pytest.fixture

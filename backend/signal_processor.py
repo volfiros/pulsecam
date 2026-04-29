@@ -11,7 +11,6 @@ class SignalProcessor:
         self.r_buffer: deque[float] = deque(maxlen=self.capacity)
         self.g_buffer: deque[float] = deque(maxlen=self.capacity)
         self.b_buffer: deque[float] = deque(maxlen=self.capacity)
-        self.timestamps: deque[float] = deque(maxlen=self.capacity)
         self.last_compute_time = 0.0
         self.compute_interval = 1.0
         self.low_hz = 0.7
@@ -19,12 +18,17 @@ class SignalProcessor:
         self.filter_order = 4
         self.min_calibrate_samples: int = fps * 5
         self.min_measuring_samples: int = fps * 15
+        self._last_result: dict = {
+            "bpm": 0,
+            "confidence": 0.0,
+            "waveform": [],
+            "status": "buffering",
+        }
 
     def append(self, r: float, g: float, b: float) -> None:
         self.r_buffer.append(r)
         self.g_buffer.append(g)
         self.b_buffer.append(b)
-        self.timestamps.append(time.time())
 
     def _compute_chrom(self, r_arr: np.ndarray, g_arr: np.ndarray, b_arr: np.ndarray) -> np.ndarray:
         xs = 3.0 * g_arr - 2.0 * r_arr
@@ -38,7 +42,8 @@ class SignalProcessor:
         return xs_centered - alpha * ys_centered
 
     def _bandpass_filter(self, signal: np.ndarray) -> np.ndarray:
-        if len(signal) < 30:
+        min_len = 3 * (self.filter_order + 1)
+        if len(signal) < min_len:
             return signal
         nyquist = self.fps / 2.0
         low = self.low_hz / nyquist
@@ -53,13 +58,15 @@ class SignalProcessor:
             return 0.0
         return (len(peaks) / duration) * 60.0
 
-    def _compute_snr(self, filtered: np.ndarray) -> float:
-        signal_power = np.mean(filtered ** 2)
-        noise = filtered - np.mean(filtered)
-        noise_power = np.var(noise)
-        if noise_power < 1e-10:
+    def _compute_snr(self, filtered: np.ndarray, original: np.ndarray) -> float:
+        residual = original - filtered
+        signal_var = np.var(filtered)
+        residual_var = np.var(residual)
+        if signal_var < 1e-10:
+            return 0.0
+        if residual_var < 1e-10:
             return 100.0
-        return 10.0 * np.log10(signal_power / noise_power)
+        return 10.0 * np.log10(signal_var / residual_var)
 
     def _get_status(self, n_samples: int, snr: float, bpm: float) -> str:
         if n_samples < self.min_calibrate_samples:
@@ -81,15 +88,16 @@ class SignalProcessor:
 
         n = len(self.r_buffer)
         if n < self.min_calibrate_samples:
-            return {
+            self._last_result = {
                 "bpm": 0,
                 "confidence": 0.0,
                 "waveform": [],
                 "status": "buffering",
             }
+            return self._last_result
 
-        if now - self.last_compute_time < self.compute_interval and n >= self.min_calibrate_samples:
-            return None
+        if now - self.last_compute_time < self.compute_interval:
+            return self._last_result
 
         self.last_compute_time = now
 
@@ -102,13 +110,14 @@ class SignalProcessor:
 
         duration = n / self.fps
         bpm = self._compute_bpm(filtered, duration)
-        snr = self._compute_snr(filtered)
+        snr = self._compute_snr(filtered, chrom)
         status = self._get_status(n, snr, bpm)
         confidence = self._get_confidence(n, snr)
 
-        return {
+        self._last_result = {
             "bpm": round(bpm, 1),
             "confidence": confidence,
             "waveform": filtered[-450:].tolist() if len(filtered) > 450 else filtered.tolist(),
             "status": status,
         }
+        return self._last_result
