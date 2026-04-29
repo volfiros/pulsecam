@@ -24,6 +24,7 @@ class SignalProcessor:
             "waveform": [],
             "status": "buffering",
         }
+        self.just_computed: bool = False
 
     def append(self, r: float, g: float, b: float) -> None:
         self.r_buffer.append(r)
@@ -88,6 +89,7 @@ class SignalProcessor:
 
         n = len(self.r_buffer)
         if n < self.min_calibrate_samples:
+            self.just_computed = True
             self._last_result = {
                 "bpm": 0,
                 "confidence": 0.0,
@@ -97,9 +99,11 @@ class SignalProcessor:
             return self._last_result
 
         if now - self.last_compute_time < self.compute_interval:
+            self.just_computed = False
             return self._last_result
 
         self.last_compute_time = now
+        self.just_computed = True
 
         r_arr = np.array(self.r_buffer)
         g_arr = np.array(self.g_buffer)
