@@ -76,7 +76,7 @@ export function usePulseCam() {
         }
 
         const readingBpm = data.raw_bpm > 0 ? data.raw_bpm : data.bpm;
-        if (readingBpm >= 50 && readingBpm <= 220 && data.confidence > 0.05) {
+        if (readingBpm >= 45 && readingBpm <= 220 && data.confidence > 0.05) {
           sessionReadings.current.push({ bpm: readingBpm, confidence: data.confidence });
         }
       } catch (e) {

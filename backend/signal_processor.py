@@ -19,7 +19,7 @@ class SignalProcessor:
         self.high_hz = 5.0
         self.filter_order = 3
         self.min_calibrate_samples: int = fps * 4
-        self.min_measuring_samples: int = fps * 7
+        self.min_measuring_samples: int = fps * 8
         self.bpm_history: deque[float] = deque(maxlen=30)
         self.confidence_history: deque[float] = deque(maxlen=30)
         self._ema_bpm: float = 0.0
@@ -246,9 +246,7 @@ class SignalProcessor:
             return "buffering"
         if n_samples < self.min_measuring_samples:
             return "calibrating"
-        if snr < 1.0 or bpm < 50 or bpm > 220 or bpm_rating < 0.03:
-            return "poor_signal"
-        if agreement < 0.3:
+        if bpm <= 0 or bpm > 220:
             return "poor_signal"
         return "measuring"
 
@@ -264,7 +262,7 @@ class SignalProcessor:
         if not self._session_bpms:
             return {"avg_bpm": 0, "avg_confidence": 0.0, "reading_count": 0}
 
-        valid_pairs = [(b, c) for b, c in zip(self._session_bpms, self._session_confidences) if c > 0.05 and 50 <= b <= 220]
+        valid_pairs = [(b, c) for b, c in zip(self._session_bpms, self._session_confidences) if c > 0.05 and 45 <= b <= 220]
         if not valid_pairs:
             return {"avg_bpm": 0, "avg_confidence": 0.0, "reading_count": 0}
 
@@ -369,7 +367,7 @@ class SignalProcessor:
         self._prev_status = status
 
         temporal_consistency = 0.0
-        if bpm > 0 and agreement >= 0.3 and bpm_rating > 0.08 and status != "poor_signal":
+        if bpm > 0 and agreement >= 0.3 and bpm_rating > 0.08:
             if len(self.bpm_history) > 0:
                 median_bpm = float(np.median(self.bpm_history))
                 if median_bpm > 0:
@@ -404,7 +402,7 @@ class SignalProcessor:
         else:
             display_bpm = bpm
 
-        if 50 <= display_bpm <= 220 and confidence > 0.05:
+        if 45 <= display_bpm <= 220 and confidence > 0.05:
             self._session_bpms.append(display_bpm)
             self._session_confidences.append(confidence)
 
