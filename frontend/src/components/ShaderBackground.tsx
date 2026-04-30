@@ -15,7 +15,12 @@ export default function ShaderBackground() {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const gl = canvas.getContext("webgl", { antialias: false, alpha: false });
+    const gl = canvas.getContext("webgl", { 
+      antialias: false, 
+      alpha: true,
+      depth: false,
+      powerPreference: "low-power" 
+    });
     if (!gl) return;
 
     gl.getExtension("OES_standard_derivatives");
@@ -73,9 +78,10 @@ export default function ShaderBackground() {
 
     function resize() {
       if (!canvas) return;
-      const dpr = Math.min(window.devicePixelRatio, 2);
-      canvas.width = window.innerWidth * dpr;
-      canvas.height = window.innerHeight * dpr;
+      const dpr = Math.min(window.devicePixelRatio, 1);
+      const scale = 0.75;
+      canvas.width = window.innerWidth * dpr * scale;
+      canvas.height = window.innerHeight * dpr * scale;
       canvas.style.width = window.innerWidth + "px";
       canvas.style.height = window.innerHeight + "px";
       gl!.viewport(0, 0, canvas.width, canvas.height);

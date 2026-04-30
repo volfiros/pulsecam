@@ -158,7 +158,6 @@ export function usePulseCam() {
       setFinalBpm(bpm > 0 ? bpm : 0);
       setFinalConfidence(0);
     } else {
-      // Use the last 15 readings (approx 15 seconds) to represent the stabilized final heart rate
       const recentReadings = readings.slice(-15);
       const sorted = [...recentReadings].sort((a, b) => a.bpm - b.bpm);
       const confidences = sorted.map((r) => r.confidence);

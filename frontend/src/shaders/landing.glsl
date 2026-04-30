@@ -25,7 +25,7 @@ float fbm(vec2 p) {
     float v = 0.0;
     float a = 0.5;
     mat2 rot = mat2(0.8, 0.6, -0.6, 0.8);
-    for (int i = 0; i < 6; i++) {
+    for (int i = 0; i < 4; i++) {
         v += a * noise(p);
         p = rot * p * 2.0;
         a *= 0.5;
@@ -43,16 +43,16 @@ void main() {
     float mouseWarp = exp(-d * 4.0) * 0.08;
 
     vec2 q = vec2(
-        fbm(uv * 3.0 + vec2(t, t * 0.7) + mouseWarp),
-        fbm(uv * 3.0 + vec2(t * 0.8, t * 1.1) - mouseWarp)
+        fbm(uv * 2.0 + vec2(t, t * 0.7) + mouseWarp),
+        fbm(uv * 2.0 + vec2(t * 0.8, t * 1.1) - mouseWarp)
     );
 
     vec2 r = vec2(
-        fbm(uv * 3.0 + 4.0 * q + vec2(1.7, 9.2) + t * 0.3),
-        fbm(uv * 3.0 + 4.0 * q + vec2(8.3, 2.8) + t * 0.5)
+        fbm(uv * 2.0 + 3.0 * q + vec2(1.7, 9.2) + t * 0.3),
+        fbm(uv * 2.0 + 3.0 * q + vec2(8.3, 2.8) + t * 0.5)
     );
 
-    float f = fbm(uv * 3.0 + 4.0 * r);
+    float f = fbm(uv * 2.0 + 3.0 * r);
 
     vec3 darkNavy = vec3(0.09, 0.12, 0.22);
     vec3 deepTeal = vec3(0.04, 0.16, 0.19);
