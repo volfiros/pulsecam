@@ -57,4 +57,7 @@ if os.path.isdir("static"):
 
     @app.get("/{full_path:path}")
     async def serve_frontend(full_path: str):
+        file_path = os.path.join("static", full_path)
+        if os.path.isfile(file_path):
+            return FileResponse(file_path)
         return FileResponse("static/index.html")
