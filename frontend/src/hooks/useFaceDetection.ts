@@ -1,16 +1,22 @@
 import { useRef, useEffect, useState, useCallback } from "react";
-import { FaceDetector, FilesetResolver } from "@mediapipe/tasks-vision";
+import { FaceLandmarker, FilesetResolver } from "@mediapipe/tasks-vision";
 
-export interface DetectedFace {
-  leftEye: { x: number; y: number };
-  rightEye: { x: number; y: number };
-  boundingBox: { x: number; y: number; width: number; height: number };
+export interface LandmarkPoint {
+  x: number;
+  y: number;
+  z: number;
+}
+
+export interface MultiFaceResult {
+  landmarks: LandmarkPoint[];
+  motion: number;
 }
 
 export function useFaceDetection() {
-  const detectorRef = useRef<FaceDetector | null>(null);
+  const detectorRef = useRef<FaceLandmarker | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const prevLandmarksRef = useRef<LandmarkPoint[] | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -21,13 +27,16 @@ export function useFaceDetection() {
           "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm"
         );
         if (cancelled) return;
-        const detector = await FaceDetector.createFromOptions(vision, {
+        const detector = await FaceLandmarker.createFromOptions(vision, {
           baseOptions: {
             modelAssetPath:
-              "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/latest/blaze_face_short_range.tflite",
+              "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task",
             delegate: "GPU",
           },
           runningMode: "VIDEO",
+          numFaces: 1,
+          outputFaceBlendshapes: false,
+          outputFacialTransformationMatrixes: false,
         });
         if (cancelled) {
           detector.close();
@@ -37,7 +46,7 @@ export function useFaceDetection() {
         setLoading(false);
       } catch (e) {
         if (!cancelled) {
-          setError(e instanceof Error ? e.message : "Failed to load face detector");
+          setError(e instanceof Error ? e.message : "Failed to load face landmarker");
           setLoading(false);
         }
       }
@@ -51,26 +60,34 @@ export function useFaceDetection() {
   }, []);
 
   const detectFace = useCallback(
-    (video: HTMLVideoElement, timestampMs: number): DetectedFace | null => {
+    (video: HTMLVideoElement, timestampMs: number): MultiFaceResult | null => {
       if (!detectorRef.current) return null;
       const result = detectorRef.current.detectForVideo(video, timestampMs);
-      if (!result.detections || result.detections.length === 0) return null;
+      if (!result.faceLandmarks || result.faceLandmarks.length === 0) return null;
 
-      const detection = result.detections[0];
-      const keypoints = detection.keypoints;
-      if (!keypoints || keypoints.length < 2) return null;
+      const landmarks = result.faceLandmarks[0].map((lm) => ({
+        x: lm.x,
+        y: lm.y,
+        z: lm.z,
+      }));
 
-      const bb = detection.boundingBox;
-      if (!bb) return null;
+      let motion = 0.0;
+      if (prevLandmarksRef.current && prevLandmarksRef.current.length === landmarks.length) {
+        let totalDist = 0.0;
+        for (let i = 0; i < landmarks.length; i++) {
+          const dx = landmarks[i].x - prevLandmarksRef.current[i].x;
+          const dy = landmarks[i].y - prevLandmarksRef.current[i].y;
+          totalDist += Math.sqrt(dx * dx + dy * dy);
+        }
+        const interEyeDist = Math.sqrt(
+          Math.pow(landmarks[33].x - landmarks[263].x, 2) +
+          Math.pow(landmarks[33].y - landmarks[263].y, 2)
+        ) || 0.1;
+        motion = (totalDist / landmarks.length) / interEyeDist;
+      }
+      prevLandmarksRef.current = landmarks;
 
-      const leftEye = keypoints[0];
-      const rightEye = keypoints[1];
-
-      return {
-        leftEye: { x: leftEye.x, y: leftEye.y },
-        rightEye: { x: rightEye.x, y: rightEye.y },
-        boundingBox: { x: bb.originX, y: bb.originY, width: bb.width, height: bb.height },
-      };
+      return { landmarks, motion };
     },
     []
   );

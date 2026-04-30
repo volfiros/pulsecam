@@ -1,45 +1,32 @@
-interface Keypoint {
-  x: number;
-  y: number;
+import type { LandmarkPoint } from "../hooks/useFaceDetection";
+
+interface RGBMeans {
+  r: number;
+  g: number;
+  b: number;
 }
 
-export function computeFaceROI(
-  leftEye: Keypoint,
-  rightEye: Keypoint,
+export interface MultiROIResult {
+  rois: {
+    forehead: RGBMeans;
+    left_cheek: RGBMeans;
+    right_cheek: RGBMeans;
+  };
+  luminance: number;
+}
+
+function patchRGB(
+  ctx: CanvasRenderingContext2D,
+  centerX: number,
+  centerY: number,
+  patchSize: number,
   canvasWidth: number,
   canvasHeight: number
-): { x: number; y: number; width: number; height: number } {
-  const midX = (leftEye.x + rightEye.x) / 2;
-  const midY = (leftEye.y + rightEye.y) / 2;
-  const dx = rightEye.x - leftEye.x;
-  const dy = rightEye.y - leftEye.y;
-  const interEyeDist = Math.sqrt(dx * dx + dy * dy);
-
-  const roiCenterX = midX * canvasWidth;
-  const roiCenterY = (midY + interEyeDist * 0.55) * canvasHeight;
-
-  const roiWidth = interEyeDist * 1.3 * canvasWidth;
-  const roiHeight = interEyeDist * 0.7 * canvasHeight;
-
-  const x = Math.max(0, roiCenterX - roiWidth / 2);
-  const y = Math.max(0, roiCenterY - roiHeight / 2);
-
-  return {
-    x,
-    y,
-    width: Math.min(roiWidth, canvasWidth - x),
-    height: Math.min(roiHeight, canvasHeight - y),
-  };
-}
-
-export function extractRGBMeans(
-  ctx: CanvasRenderingContext2D,
-  roi: { x: number; y: number; width: number; height: number }
-): { r: number; g: number; b: number } {
-  const x = Math.floor(roi.x);
-  const y = Math.floor(roi.y);
-  const w = Math.floor(roi.width);
-  const h = Math.floor(roi.height);
+): RGBMeans {
+  const x = Math.max(0, Math.floor(centerX - patchSize / 2));
+  const y = Math.max(0, Math.floor(centerY - patchSize / 2));
+  const w = Math.max(0, Math.min(Math.floor(patchSize), Math.floor(canvasWidth - x)));
+  const h = Math.max(0, Math.min(Math.floor(patchSize), Math.floor(canvasHeight - y)));
 
   if (w <= 0 || h <= 0) return { r: 0, g: 0, b: 0 };
 
@@ -61,4 +48,81 @@ export function extractRGBMeans(
     g: totalG / pixelCount,
     b: totalB / pixelCount,
   };
+}
+
+export function extractMultiROI(
+  ctx: CanvasRenderingContext2D,
+  landmarks: LandmarkPoint[],
+  canvasWidth: number,
+  canvasHeight: number
+): MultiROIResult {
+  const foreheadLM = landmarks[10];
+  const leftCheekLM = landmarks[234];
+  const rightCheekLM = landmarks[454];
+  const noseLM = landmarks[1];
+
+  const interEyeDist = Math.sqrt(
+    Math.pow((landmarks[33].x - landmarks[263].x) * canvasWidth, 2) +
+    Math.pow((landmarks[33].y - landmarks[263].y) * canvasHeight, 2)
+  );
+  const patchSize = Math.max(10, interEyeDist * 0.3);
+
+  const forehead = patchRGB(
+    ctx,
+    ((foreheadLM.x + noseLM.x) / 2) * canvasWidth,
+    (foreheadLM.y - interEyeDist * 0.1 / canvasHeight) * canvasHeight,
+    patchSize,
+    canvasWidth,
+    canvasHeight
+  );
+  const left_cheek = patchRGB(
+    ctx,
+    leftCheekLM.x * canvasWidth,
+    leftCheekLM.y * canvasHeight,
+    patchSize,
+    canvasWidth,
+    canvasHeight
+  );
+  const right_cheek = patchRGB(
+    ctx,
+    rightCheekLM.x * canvasWidth,
+    rightCheekLM.y * canvasHeight,
+    patchSize,
+    canvasWidth,
+    canvasHeight
+  );
+
+  const luminance = (forehead.r + forehead.g + forehead.b + left_cheek.r + left_cheek.g + left_cheek.b + right_cheek.r + right_cheek.g + right_cheek.b) / 9.0;
+
+  return { rois: { forehead, left_cheek, right_cheek }, luminance };
+}
+
+export function computeROIBox(
+  landmarks: LandmarkPoint[],
+  canvasWidth: number,
+  canvasHeight: number
+): { x: number; y: number; width: number; height: number }[] {
+  const foreheadLM = landmarks[10];
+  const leftCheekLM = landmarks[234];
+  const rightCheekLM = landmarks[454];
+  const noseLM = landmarks[1];
+
+  const interEyeDist = Math.sqrt(
+    Math.pow((landmarks[33].x - landmarks[263].x) * canvasWidth, 2) +
+    Math.pow((landmarks[33].y - landmarks[263].y) * canvasHeight, 2)
+  );
+  const patchSize = Math.max(10, interEyeDist * 0.3);
+
+  const rois = [
+    { cx: ((foreheadLM.x + noseLM.x) / 2) * canvasWidth, cy: (foreheadLM.y - interEyeDist * 0.1 / canvasHeight) * canvasHeight },
+    { cx: leftCheekLM.x * canvasWidth, cy: leftCheekLM.y * canvasHeight },
+    { cx: rightCheekLM.x * canvasWidth, cy: rightCheekLM.y * canvasHeight },
+  ];
+
+  return rois.map(({ cx, cy }) => ({
+    x: Math.max(0, cx - patchSize / 2),
+    y: Math.max(0, cy - patchSize / 2),
+    width: patchSize,
+    height: patchSize,
+  }));
 }

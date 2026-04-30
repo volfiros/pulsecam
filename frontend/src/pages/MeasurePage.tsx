@@ -2,6 +2,7 @@ import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { usePulseCam } from "../hooks/usePulseCam";
 import WebcamFeed from "../components/WebcamFeed";
+import type { FramePayload } from "../components/WebcamFeed";
 import WaveformChart from "../components/WaveformChart";
 import MeasureHeader from "../components/MeasureHeader";
 import ResultsScreen from "../components/ResultsScreen";
@@ -15,19 +16,19 @@ export default function MeasurePage() {
   const navigate = useNavigate();
   const { phase, bpm, finalBpm, finalConfidence, confidence, waveform, status, duration, sendFrame, start, stop } = usePulseCam();
   const [cameraError, setCameraError] = useState<string | null>(null);
-  const [roi, setRoi] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
+  const [rois, setRois] = useState<{ x: number; y: number; width: number; height: number }[] | null>(null);
   const [videoSize, setVideoSize] = useState<{ w: number; h: number } | null>(null);
 
   const handleFrame = useCallback(
-    (r: number, g: number, b: number) => {
-      sendFrame(r, g, b);
+    (payload: FramePayload) => {
+      sendFrame(payload);
     },
     [sendFrame]
   );
 
-  const handleFaceDetected = useCallback(
-    (newRoi: { x: number; y: number; width: number; height: number } | null) => {
-      setRoi(newRoi);
+  const handleROIsDetected = useCallback(
+    (newRois: { x: number; y: number; width: number; height: number }[] | null) => {
+      setRois(newRois);
     },
     []
   );
@@ -51,14 +52,14 @@ export default function MeasurePage() {
       {isMeasuring && !cameraError && (
         <WebcamFeed
           onFrame={handleFrame}
-          onFaceDetected={handleFaceDetected}
+          onROIsDetected={handleROIsDetected}
           onCameraError={handleCameraError}
           onVideoSize={handleVideoSize}
         />
       )}
 
-      {isMeasuring && roi && videoSize && (
-        <ROIOverlay roi={roi} videoWidth={videoSize.w} videoHeight={videoSize.h} />
+      {isMeasuring && rois && videoSize && (
+        <ROIOverlay rois={rois} videoWidth={videoSize.w} videoHeight={videoSize.h} />
       )}
 
       <AnimatePresence mode="wait">

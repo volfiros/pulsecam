@@ -9,10 +9,16 @@ from signal_processor import SignalProcessor
 app = FastAPI()
 
 
-class FrameData(BaseModel):
+class ROIData(BaseModel):
     r: float
     g: float
     b: float
+
+
+class FrameData(BaseModel):
+    rois: dict[str, ROIData]
+    motion: float = 0.0
+    luminance: float = 0.0
 
 
 @app.get("/health")
@@ -29,7 +35,12 @@ async def websocket_endpoint(websocket: WebSocket):
             try:
                 data = await websocket.receive_json()
                 frame = FrameData(**data)
-                result = processor.process(frame.r, frame.g, frame.b)
+                rois_dict = {name: {"r": roi.r, "g": roi.g, "b": roi.b} for name, roi in frame.rois.items()}
+                result = processor.process({
+                    "rois": rois_dict,
+                    "motion": frame.motion,
+                    "luminance": frame.luminance,
+                })
                 if processor.just_computed:
                     await websocket.send_json(result)
             except WebSocketDisconnect:

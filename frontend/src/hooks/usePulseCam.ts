@@ -11,6 +11,7 @@ import {
   type MeasurementStatus,
   type WSResponse,
 } from "../lib/constants";
+import type { FramePayload } from "../components/WebcamFeed";
 
 async function waitForServer(maxWaitMs = COLD_START_MAX_WAIT_MS): Promise<boolean> {
   const start = Date.now();
@@ -71,12 +72,17 @@ export function usePulseCam() {
         setWaveform(data.waveform);
         setStatus(data.status);
 
-        if (data.effective_fps) {
-          console.log(`[PulseCam] BPM=${data.raw_bpm} G=${data.g_bpm} C=${data.c_bpm} agr=${data.agreement} conf=${data.confidence.toFixed(2)} fps=${data.effective_fps} ${data.status}`);
+        if (data.best_method) {
+          const methodsStr = Object.entries(data.methods)
+            .map(([k, v]) => `${k}=${v.bpm.toFixed(0)}/${v.snr.toFixed(1)}dB`)
+            .join(" ");
+          console.log(
+            `[PulseCam] BPM=${data.raw_bpm} best=${data.best_method} agr=${data.agreement} conf=${data.confidence.toFixed(2)} motion=${data.motion.toFixed(2)} ${methodsStr} ${data.status}`
+          );
         }
 
         const readingBpm = data.raw_bpm > 0 ? data.raw_bpm : data.bpm;
-        if (readingBpm >= 45 && readingBpm <= 220 && data.confidence > 0.05) {
+        if (readingBpm >= 42 && readingBpm <= 180 && data.confidence > 0.05) {
           sessionReadings.current.push({ bpm: readingBpm, confidence: data.confidence });
         }
       } catch (e) {
@@ -107,9 +113,9 @@ export function usePulseCam() {
     };
   }, []);
 
-  const sendFrame = useCallback((r: number, g: number, b: number) => {
+  const sendFrame = useCallback((payload: FramePayload) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ r, g, b }));
+      wsRef.current.send(JSON.stringify(payload));
     }
   }, []);
 

@@ -1,16 +1,26 @@
 import { useRef, useEffect } from "react";
 import { useFaceDetection } from "../hooks/useFaceDetection";
-import { computeFaceROI, extractRGBMeans } from "../lib/extractROI";
+import { extractMultiROI, computeROIBox } from "../lib/extractROI";
 import { FPS } from "../lib/constants";
 
+export interface FramePayload {
+  rois: {
+    forehead: { r: number; g: number; b: number };
+    left_cheek: { r: number; g: number; b: number };
+    right_cheek: { r: number; g: number; b: number };
+  };
+  motion: number;
+  luminance: number;
+}
+
 interface WebcamFeedProps {
-  onFrame: (r: number, g: number, b: number) => void;
-  onFaceDetected: (roi: { x: number; y: number; width: number; height: number } | null) => void;
+  onFrame: (payload: FramePayload) => void;
+  onROIsDetected: (rois: { x: number; y: number; width: number; height: number }[] | null) => void;
   onCameraError: (error: string) => void;
   onVideoSize?: (width: number, height: number) => void;
 }
 
-export default function WebcamFeed({ onFrame, onFaceDetected, onCameraError, onVideoSize }: WebcamFeedProps) {
+export default function WebcamFeed({ onFrame, onROIsDetected, onCameraError, onVideoSize }: WebcamFeedProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -94,17 +104,12 @@ export default function WebcamFeed({ onFrame, onFaceDetected, onCameraError, onV
         const face = detectFace(video, now);
 
         if (face) {
-          const roi = computeFaceROI(
-            face.leftEye,
-            face.rightEye,
-            canvas.width,
-            canvas.height
-          );
-          onFaceDetected(roi);
-          const rgb = extractRGBMeans(ctx, roi);
-          onFrame(rgb.r, rgb.g, rgb.b);
+          const { landmarks, motion } = face;
+          const { rois, luminance } = extractMultiROI(ctx, landmarks, canvas.width, canvas.height);
+          onFrame({ rois, motion, luminance });
+          onROIsDetected(computeROIBox(landmarks, canvas.width, canvas.height));
         } else {
-          onFaceDetected(null);
+          onROIsDetected(null);
         }
       }
 
@@ -113,7 +118,7 @@ export default function WebcamFeed({ onFrame, onFaceDetected, onCameraError, onV
 
     loop();
     return () => cancelAnimationFrame(animFrameRef.current);
-  }, [detectorLoading, detectFace, onFrame, onFaceDetected]);
+  }, [detectorLoading, detectFace, onFrame, onROIsDetected]);
 
   return (
     <>

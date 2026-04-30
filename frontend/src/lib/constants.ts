@@ -1,5 +1,4 @@
 export const FPS = 30;
-export const BUFFER_SECONDS = 15;
 export const COLD_START_MAX_WAIT_MS = 90000;
 export const COLD_START_CHECK_INTERVAL_MS = 3000;
 export const COLD_START_ABORT_TIMEOUT_MS = 5000;
@@ -24,14 +23,19 @@ export type MeasurementStatus =
   | "poor_signal"
   | "error";
 
+export interface MethodResult {
+  bpm: number;
+  snr: number;
+}
+
 export interface WSResponse {
   bpm: number;
   raw_bpm: number;
   confidence: number;
   waveform: number[];
   status: MeasurementStatus;
-  effective_fps: number;
-  g_bpm: number;
-  c_bpm: number;
+  methods: Record<string, MethodResult>;
+  best_method: string;
   agreement: number;
+  motion: number;
 }
