@@ -72,7 +72,7 @@ export function usePulseCam() {
         setStatus(data.status);
 
         if (data.effective_fps) {
-          console.log(`[PulseCam] BPM=${data.raw_bpm} conf=${data.confidence.toFixed(2)} fps=${data.effective_fps} status=${data.status}`);
+          console.log(`[PulseCam] BPM=${data.raw_bpm} G=${data.g_bpm} C=${data.c_bpm} agr=${data.agreement} conf=${data.confidence.toFixed(2)} fps=${data.effective_fps} ${data.status}`);
         }
 
         const readingBpm = data.raw_bpm > 0 ? data.raw_bpm : data.bpm;

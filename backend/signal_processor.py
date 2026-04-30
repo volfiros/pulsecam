@@ -127,8 +127,8 @@ class SignalProcessor:
         autocorr = autocorr[n - 1:]
         autocorr = autocorr / autocorr[0] if autocorr[0] > 1e-10 else autocorr
 
-        max_lag = int(fps / (40.0 / 60.0))
-        min_lag = int(fps / (220.0 / 60.0))
+        max_lag = min(max(int(fps / (40.0 / 60.0)), 50), n - 1)
+        min_lag = min(int(fps / (220.0 / 60.0)), max(3, max_lag // 2))
 
         if len(autocorr) <= max_lag:
             return 0.0, 0.0
@@ -420,5 +420,8 @@ class SignalProcessor:
             "waveform": display_waveform[-450:].tolist() if len(display_waveform) > 450 else display_waveform.tolist(),
             "status": status,
             "effective_fps": round(self._effective_fps, 1),
+            "g_bpm": round(g_bpm, 1) if g_valid else 0,
+            "c_bpm": round(c_bpm, 1) if c_valid else 0,
+            "agreement": round(agreement, 2),
         }
         return self._last_result

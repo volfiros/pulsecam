@@ -31,4 +31,7 @@ export interface WSResponse {
   waveform: number[];
   status: MeasurementStatus;
   effective_fps: number;
+  g_bpm: number;
+  c_bpm: number;
+  agreement: number;
 }
