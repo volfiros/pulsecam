@@ -1,23 +1,8 @@
----
-title: PulseCam
-emoji: 💓
-colorFrom: indigo
-colorTo: purple
-sdk: docker
-pinned: false
-license: mit
-short_description: Contactless heart rate monitoring via webcam
----
-
 <div align="center">
-  <img src="./assets/banner.svg" alt="PulseCam Banner" width="100%" />
-
-  # PulseCam 💓
-  
-  **Your Pulse, From Your Camera**
+  <img src="../assets/banner.svg" alt="PulseCam Banner" width="100%" />
 
   [![Hugging Face Space](https://img.shields.io/badge/🤗%20Hugging%20Face-Space-yellow.svg)](https://huggingface.co/spaces/agaroth/pulsecam)
-  [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+  [![License](https://img.shields.io/badge/license-MIT-blue.svg)](../LICENSE)
 </div>
 
 ## 🎯 The Problem
@@ -76,4 +61,4 @@ Try it out directly in your browser without installing anything!
 - **Mobile Optimization:** Enhance camera access and processing efficiency on mobile devices.
 - **HRV (Heart Rate Variability):** Extract inter-beat intervals to measure stress levels.
 
-See the [Architecture Document](ARCHITECTURE.md) for a deep dive into how the signal processing pipeline works.
+See the [Architecture Document](../ARCHITECTURE.md) for a deep dive into how the signal processing pipeline works.
