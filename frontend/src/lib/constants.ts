@@ -2,8 +2,8 @@ export const FPS = 30;
 export const COLD_START_MAX_WAIT_MS = 90000;
 export const COLD_START_CHECK_INTERVAL_MS = 3000;
 export const COLD_START_ABORT_TIMEOUT_MS = 5000;
-export const HEALTH_CHECK_URL = `${window.location.protocol}//${window.location.host}/health`;
-export const WS_URL = `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}/ws`;
+export const HEALTH_CHECK_URL = import.meta.env.PROD ? `https://${window.location.host}/health` : "http://localhost:8000/health";
+export const WS_URL = import.meta.env.PROD ? `wss://${window.location.host}/ws` : "ws://localhost:8000/ws";
 export const MAX_WS_RETRIES = 5;
 export const WS_RETRY_BASE_MS = 2000;
 
