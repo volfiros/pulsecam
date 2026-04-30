@@ -158,7 +158,9 @@ export function usePulseCam() {
       setFinalBpm(bpm > 0 ? bpm : 0);
       setFinalConfidence(0);
     } else {
-      const sorted = [...readings].sort((a, b) => a.bpm - b.bpm);
+      // Use the last 15 readings (approx 15 seconds) to represent the stabilized final heart rate
+      const recentReadings = readings.slice(-15);
+      const sorted = [...recentReadings].sort((a, b) => a.bpm - b.bpm);
       const confidences = sorted.map((r) => r.confidence);
       const bpms = sorted.map((r) => r.bpm);
 
@@ -181,7 +183,7 @@ export function usePulseCam() {
 
       let weightedSum = 0;
       let weightTotal = 0;
-      for (const r of readings) {
+      for (const r of recentReadings) {
         weightedSum += r.bpm * r.confidence;
         weightTotal += r.confidence;
       }
