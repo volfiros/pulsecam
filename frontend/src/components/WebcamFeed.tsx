@@ -27,7 +27,6 @@ async function lockCameraSettings(stream: MediaStream): Promise<void> {
   const caps = (track.getCapabilities?.() ?? {}) as Record<string, unknown> & {
     exposureMode?: string[];
     whiteBalanceMode?: string[];
-    focusMode?: string[];
   };
   const advanced: MediaTrackConstraintSet[] = [];
   if (caps.exposureMode?.includes("manual")) {
@@ -36,18 +35,14 @@ async function lockCameraSettings(stream: MediaStream): Promise<void> {
   if (caps.whiteBalanceMode?.includes("manual")) {
     advanced.push({ whiteBalanceMode: "manual" } as MediaTrackConstraintSet);
   }
-  if (caps.focusMode?.includes("manual")) {
-    advanced.push({ focusMode: "manual" } as MediaTrackConstraintSet);
-  }
   if (import.meta.env.DEV) {
     console.log("[PulseCam] camera capabilities:", {
       exposureMode: caps.exposureMode,
       whiteBalanceMode: caps.whiteBalanceMode,
-      focusMode: caps.focusMode,
     });
   }
   if (advanced.length === 0) {
-    if (import.meta.env.DEV) console.warn("[PulseCam] camera does not support manual exposure/wb/focus — auto modes still active");
+    if (import.meta.env.DEV) console.warn("[PulseCam] camera does not support manual exposure/wb — auto modes still active");
     return;
   }
   try {
@@ -57,7 +52,6 @@ async function lockCameraSettings(stream: MediaStream): Promise<void> {
       console.log("[PulseCam] camera locked. Settings after:", {
         exposureMode: settings.exposureMode,
         whiteBalanceMode: settings.whiteBalanceMode,
-        focusMode: settings.focusMode,
       });
     }
   } catch (err) {
