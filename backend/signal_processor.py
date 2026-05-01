@@ -390,7 +390,15 @@ class SignalProcessor:
         if best_method and best_method in method_bpms and best_snr >= self.snr_threshold and n_agreeing >= 2 and agreement > 0.2:
             raw_bpm = method_bpms[best_method]
             if n_agreeing >= 3 and agreement > 0.5 and agreement_cluster:
-                raw_bpm = float(np.mean(agreement_cluster))
+                lo, hi = min(agreement_cluster), max(agreement_cluster)
+                ws, bs = [], []
+                for name, b in method_bpms.items():
+                    if lo <= b <= hi:
+                        snr = method_results[name]["snr"]
+                        ws.append(np.exp(min(snr, 10.0)))
+                        bs.append(b)
+                if ws:
+                    raw_bpm = float(np.sum(np.array(ws) * np.array(bs)) / np.sum(ws))
             bpm_rating = method_results[best_method]["rating"]
             snr_score = min(max(best_snr, 0.0) / 3.0, 1.0)
             confidence = min(snr_score * agreement * motion_penalty * min(bpm_rating * 3.5, 1.0), 1.0)
