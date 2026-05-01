@@ -45,19 +45,20 @@ async def websocket_endpoint(websocket: WebSocket):
                     await websocket.send_json(result)
             except WebSocketDisconnect:
                 break
-            except Exception as e:
+            except Exception:
                 logging.getLogger("uvicorn").exception("WebSocket processing error")
-                await websocket.send_json({"error": str(e), "status": "error"})
+                await websocket.send_json({"error": "processing_failed", "status": "error"})
     finally:
         del processor
 
 
 if os.path.isdir("static"):
+    STATIC_ROOT = os.path.realpath("static")
     app.mount("/assets", StaticFiles(directory="static/assets"), name="assets")
 
     @app.get("/{full_path:path}")
     async def serve_frontend(full_path: str):
-        file_path = os.path.join("static", full_path)
-        if os.path.isfile(file_path):
-            return FileResponse(file_path)
-        return FileResponse("static/index.html")
+        candidate = os.path.realpath(os.path.join(STATIC_ROOT, full_path))
+        if (candidate == STATIC_ROOT or candidate.startswith(STATIC_ROOT + os.sep)) and os.path.isfile(candidate):
+            return FileResponse(candidate)
+        return FileResponse(os.path.join(STATIC_ROOT, "index.html"))

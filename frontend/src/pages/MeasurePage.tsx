@@ -14,7 +14,7 @@ import { useState, useCallback, useEffect } from "react";
 
 export default function MeasurePage() {
   const navigate = useNavigate();
-  const { phase, bpm, finalBpm, finalConfidence, confidence, waveform, status, duration, sendFrame, start, stop } = usePulseCam();
+  const { phase, bpm, finalBpm, finalConfidence, confidence, waveform, status, duration, loadingElapsed, sendFrame, start, stop } = usePulseCam();
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [rois, setRois] = useState<{ x: number; y: number; width: number; height: number }[] | null>(null);
   const [videoSize, setVideoSize] = useState<{ w: number; h: number } | null>(null);
@@ -63,39 +63,29 @@ export default function MeasurePage() {
       )}
 
       <AnimatePresence mode="wait">
-        {phase === "checking" && (
+        {(phase === "checking" || phase === "connecting") && (
           <motion.div
-            key="checking"
+            key="loading"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-10 flex flex-col items-center justify-center"
+            className="fixed inset-0 z-10 flex flex-col items-center justify-center gap-4 px-6"
           >
             <PulseRing />
-          </motion.div>
-        )}
-
-        {phase === "waking" && (
-          <motion.div
-            key="waking"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-10 flex flex-col items-center justify-center"
-          >
-            <PulseRing />
-          </motion.div>
-        )}
-
-        {phase === "connecting" && (
-          <motion.div
-            key="connecting"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-10 flex flex-col items-center justify-center"
-          >
-            <PulseRing />
+            <p
+              className="text-text-secondary text-sm sm:text-base text-center"
+              style={{ fontFamily: "var(--font-sans)" }}
+            >
+              {phase === "checking" ? "Waking up the server…" : "Connecting…"}
+              {loadingElapsed >= 10 && (
+                <span
+                  className="ml-2 text-text-muted text-xs"
+                  style={{ fontFamily: "var(--font-mono)" }}
+                >
+                  {loadingElapsed}s
+                </span>
+              )}
+            </p>
           </motion.div>
         )}
 

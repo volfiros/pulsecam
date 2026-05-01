@@ -36,3 +36,8 @@ htmlcov/
 .agents/
 .claude/
 .gstack/
+.paseo/
+.codex/
+.cursor/
+.windsurf/
+.continue/

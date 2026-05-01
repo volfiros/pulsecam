@@ -39,6 +39,7 @@ export function usePulseCam() {
   const [waveform, setWaveform] = useState<number[]>([]);
   const [status, setStatus] = useState<MeasurementStatus>("buffering");
   const [duration, setDuration] = useState(0);
+  const [loadingElapsed, setLoadingElapsed] = useState(0);
   const wsRef = useRef<WebSocket | null>(null);
   const intentionalStop = useRef(false);
   const retryCount = useRef(0);
@@ -47,6 +48,18 @@ export function usePulseCam() {
   const sessionReadings = useRef<SessionReading[]>([]);
   const [finalBpm, setFinalBpm] = useState(0);
   const [finalConfidence, setFinalConfidence] = useState(0);
+
+  useEffect(() => {
+    if (phase !== "checking" && phase !== "connecting") {
+      setLoadingElapsed(0);
+      return;
+    }
+    const startedAt = Date.now();
+    const id = window.setInterval(() => {
+      setLoadingElapsed(Math.floor((Date.now() - startedAt) / 1000));
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [phase]);
 
   const connect = useCallback(() => {
     if (intentionalStop.current) return;
@@ -72,7 +85,7 @@ export function usePulseCam() {
         setWaveform(data.waveform);
         setStatus(data.status);
 
-        if (data.best_method) {
+        if (import.meta.env.DEV && data.best_method) {
           const methodsStr = Object.entries(data.methods)
             .map(([k, v]) => `${k}=${v.bpm.toFixed(0)}/${v.snr.toFixed(1)}dB`)
             .join(" ");
@@ -86,7 +99,7 @@ export function usePulseCam() {
           sessionReadings.current.push({ bpm: readingBpm, confidence: data.confidence });
         }
       } catch (e) {
-        console.error("Failed to parse WebSocket message:", e);
+        if (import.meta.env.DEV) console.error("Failed to parse WebSocket message:", e);
       }
     };
 
@@ -206,5 +219,5 @@ export function usePulseCam() {
     };
   }, []);
 
-  return { phase, bpm, finalBpm, finalConfidence, confidence, waveform, status, duration, sendFrame, start, stop };
+  return { phase, bpm, finalBpm, finalConfidence, confidence, waveform, status, duration, loadingElapsed, sendFrame, start, stop };
 }

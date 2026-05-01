@@ -1,5 +1,5 @@
 import numpy as np
-from scipy.signal import butter, sosfiltfilt, welch
+from scipy.signal import butter, sosfiltfilt, welch, find_peaks
 from collections import deque
 import time
 
@@ -7,8 +7,9 @@ import time
 def _detrend_ma(signal: np.ndarray, window: int) -> np.ndarray:
     if len(signal) <= window:
         return signal - np.mean(signal)
-    kernel = np.ones(window) / window
-    trend = np.convolve(signal, kernel, mode="same")
+    kernel = np.ones(window)
+    counts = np.convolve(np.ones_like(signal), kernel, mode="same")
+    trend = np.convolve(signal, kernel, mode="same") / counts
     return signal - trend
 
 
@@ -92,13 +93,13 @@ class SignalProcessor:
         self._luminance_buffer: deque[float] = deque(maxlen=self.capacity)
         self.last_compute_time = 0.0
         self.compute_interval = 1.0
-        self.low_hz = 0.7
-        self.high_hz = 3.5
-        self.filter_order = 3
+        self.low_hz = 0.65
+        self.high_hz = 4.0
+        self.filter_order = 6
         self.min_early_samples: int = fps * 5
         self.min_full_samples: int = fps * 15
         self.motion_threshold: float = 2.0
-        self.snr_threshold: float = -15.0
+        self.snr_threshold: float = 0.0
         self.agreement_threshold: float = 12.0
         self.bpm_history: deque[float] = deque(maxlen=30)
         self._ema_bpm: float = 0.0
@@ -116,8 +117,6 @@ class SignalProcessor:
             "motion": 0.0,
         }
         self.just_computed: bool = False
-        self._session_bpms: list[float] = []
-        self._session_confidences: list[float] = []
         self._detrend_window = fps * 2
 
     def _average_rois(self, rois: dict) -> tuple[float, float, float]:
@@ -187,17 +186,34 @@ class SignalProcessor:
         noverlap = samples_per_seg // 2
         if n < samples_per_seg:
             return 0.0, 0.0
-        freqs, psd = welch(signal, fs=fps, nperseg=samples_per_seg, noverlap=noverlap)
-        valid = (freqs >= 42.0 / 60.0) & (freqs <= 180.0 / 60.0)
+        nfft = max(samples_per_seg * 8, 1024)
+        freqs, psd = welch(signal, fs=fps, nperseg=samples_per_seg, noverlap=noverlap, nfft=nfft)
+        hps_len = len(psd) // 2
+        if hps_len < 2:
+            return 0.0, 0.0
+        hps = psd[:hps_len] * psd[::2][:hps_len]
+        hps_freqs = freqs[:hps_len]
+        valid = (hps_freqs >= 42.0 / 60.0) & (hps_freqs <= 180.0 / 60.0)
         if not np.any(valid):
             return 0.0, 0.0
-        vf = freqs[valid]
-        vp = psd[valid]
+        vf = hps_freqs[valid]
+        vp = hps[valid]
         peak_idx = int(np.argmax(vp))
         peak_power = vp[peak_idx]
         total_power = np.sum(vp)
         prominence = peak_power / total_power if total_power > 1e-10 else 0.0
-        return float(vf[peak_idx] * 60.0), prominence
+        if 0 < peak_idx < len(vp) - 1:
+            a = vp[peak_idx - 1]
+            b = vp[peak_idx]
+            c = vp[peak_idx + 1]
+            denom = a - 2.0 * b + c
+            delta = 0.5 * (a - c) / denom if abs(denom) > 1e-10 else 0.0
+            delta = max(-0.5, min(0.5, delta))
+        else:
+            delta = 0.0
+        bin_width = vf[1] - vf[0] if len(vf) > 1 else 0.0
+        peak_freq = vf[peak_idx] + delta * bin_width
+        return float(peak_freq * 60.0), prominence
 
     def _autocorrelation_bpm(self, signal: np.ndarray) -> tuple[float, float]:
         n = len(signal)
@@ -210,7 +226,9 @@ class SignalProcessor:
             signal = signal / std
         autocorr = np.correlate(signal, signal, mode="full")
         autocorr = autocorr[n - 1:]
-        autocorr = autocorr / autocorr[0] if autocorr[0] > 1e-10 else autocorr
+        if autocorr[0] <= 1e-10:
+            return 0.0, 0.0
+        autocorr = autocorr / autocorr[0]
         max_lag = min(max(int(fps / (42.0 / 60.0)), 50), n - 1)
         min_lag = min(int(fps / (180.0 / 60.0)), max(3, max_lag // 2))
         if len(autocorr) <= max_lag:
@@ -218,14 +236,13 @@ class SignalProcessor:
         region = autocorr[min_lag:max_lag]
         if len(region) < 3:
             return 0.0, 0.0
-        peak_idx = -1
-        peak_val = 0.0
-        for i in range(1, len(region) - 1):
-            if region[i] > region[i - 1] and region[i] > region[i + 1] and region[i] > 0.06:
-                peak_idx = i
-                peak_val = region[i]
-                break
-        if peak_idx < 0 or peak_val < 0.06:
+        peaks, props = find_peaks(region, height=0.06)
+        if len(peaks) == 0:
+            return 0.0, 0.0
+        best = int(np.argmax(props["peak_heights"]))
+        peak_idx = int(peaks[best])
+        peak_val = float(region[peak_idx])
+        if peak_idx <= 0 or peak_idx >= len(region) - 1:
             return 0.0, 0.0
         a = region[peak_idx - 1]
         b_val = region[peak_idx]
@@ -270,28 +287,28 @@ class SignalProcessor:
             return 0.0
         return float(np.var(list(self._luminance_buffer)[-60:]))
 
-    def _compute_agreement(self, method_bpms: dict[str, float]) -> tuple[float, int]:
+    def _compute_agreement(self, method_bpms: dict[str, float]) -> tuple[float, int, list[float]]:
         valid_bpms = sorted([v for v in method_bpms.values() if 42.0 <= v <= 180.0])
         if len(valid_bpms) < 2:
-            return 0.0, len(valid_bpms)
-            
+            return 0.0, len(valid_bpms), valid_bpms
+
         best_agreement = 0.0
-        best_n = 0
-        
+        best_cluster: list[float] = []
+
         for i in range(len(valid_bpms)):
             for j in range(i + 1, len(valid_bpms)):
                 cluster = valid_bpms[i:j+1]
                 spread = cluster[-1] - cluster[0]
                 n_cluster = len(cluster)
-                
+
                 agr = max(0.0, 1.0 - spread / self.agreement_threshold)
                 agr *= min(n_cluster / 3.0, 1.0)
-                
+
                 if agr > best_agreement:
                     best_agreement = agr
-                    best_n = n_cluster
-                    
-        return best_agreement, best_n
+                    best_cluster = cluster
+
+        return best_agreement, len(best_cluster), best_cluster
 
     def _get_status(self, n_samples: int, bpm: float, confidence: float) -> str:
         if n_samples < self.min_early_samples:
@@ -301,33 +318,6 @@ class SignalProcessor:
         if confidence < 0.15:
             return "poor_signal"
         return "measuring"
-
-    def get_session_summary(self) -> dict:
-        if not self._session_bpms:
-            return {"avg_bpm": 0, "avg_confidence": 0.0, "reading_count": 0}
-        valid_pairs = [(b, c) for b, c in zip(self._session_bpms, self._session_confidences) if c > 0.05 and 42 <= b <= 180]
-        if not valid_pairs:
-            return {"avg_bpm": 0, "avg_confidence": 0.0, "reading_count": 0}
-        sorted_pairs = sorted(valid_pairs, key=lambda x: x[0])
-        bpms_sorted = [p[0] for p in sorted_pairs]
-        confs_sorted = [p[1] for p in sorted_pairs]
-        cum_weights = np.cumsum(confs_sorted)
-        total_weight = cum_weights[-1]
-        if total_weight < 1e-10:
-            return {"avg_bpm": 0, "avg_confidence": 0.0, "reading_count": 0}
-        half = total_weight / 2.0
-        idx = int(np.searchsorted(cum_weights, half))
-        idx = min(idx, len(bpms_sorted) - 1)
-        weighted_median_bpm = round(bpms_sorted[idx], 1)
-        weighted_sum = sum(b * c for b, c in valid_pairs)
-        weighted_avg_bpm = round(weighted_sum / total_weight, 1)
-        avg_confidence = round(sum(confs_sorted) / len(confs_sorted), 2)
-        return {
-            "avg_bpm": weighted_avg_bpm,
-            "median_bpm": weighted_median_bpm,
-            "avg_confidence": avg_confidence,
-            "reading_count": len(valid_pairs),
-        }
 
     def process(self, frame_data: dict) -> dict:
         rois = frame_data.get("rois", {})
@@ -392,17 +382,17 @@ class SignalProcessor:
                 best_snr = mr["snr"]
                 best_method = name
 
-        agreement, n_agreeing = self._compute_agreement(method_bpms)
+        agreement, n_agreeing, agreement_cluster = self._compute_agreement(method_bpms)
 
         recent_motion = self._get_recent_motion()
         motion_penalty = max(0.0, 1.0 - recent_motion / self.motion_threshold) if recent_motion > 0.5 else 1.0
 
         if best_method and best_method in method_bpms and best_snr >= self.snr_threshold and n_agreeing >= 2 and agreement > 0.2:
             raw_bpm = method_bpms[best_method]
-            if n_agreeing >= 3 and agreement > 0.5:
-                raw_bpm = float(np.mean(list(method_bpms.values())))
+            if n_agreeing >= 3 and agreement > 0.5 and agreement_cluster:
+                raw_bpm = float(np.mean(agreement_cluster))
             bpm_rating = method_results[best_method]["rating"]
-            snr_score = min(max(best_snr + 15.0, 0) / 15.0, 1.0)
+            snr_score = min(max(best_snr, 0.0) / 3.0, 1.0)
             confidence = min(snr_score * agreement * motion_penalty * min(bpm_rating * 3.5, 1.0), 1.0)
             bpm = raw_bpm
         else:
@@ -428,10 +418,6 @@ class SignalProcessor:
             self._ema_bpm = display_bpm
         elif display_bpm > 0:
             self._ema_bpm = self._ema_alpha * display_bpm + (1 - self._ema_alpha) * self._ema_bpm
-
-        if status == "measuring" and 42 <= display_bpm <= 180 and confidence > 0.05:
-            self._session_bpms.append(display_bpm)
-            self._session_confidences.append(confidence)
 
         waveform_signal = filtered.get(best_method, filtered.get("chrom", filtered.get("green", np.array([]))))
         display_waveform = waveform_signal[-450:].tolist() if len(waveform_signal) > 450 else waveform_signal.tolist()
