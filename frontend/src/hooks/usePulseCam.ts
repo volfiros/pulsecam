@@ -95,7 +95,7 @@ export function usePulseCam() {
         }
 
         const readingBpm = data.raw_bpm > 0 ? data.raw_bpm : data.bpm;
-        if (readingBpm >= 42 && readingBpm <= 180 && data.confidence > 0.05) {
+        if (readingBpm >= 42 && readingBpm <= 180 && data.confidence >= 0.15) {
           sessionReadings.current.push({ bpm: readingBpm, confidence: data.confidence });
         }
       } catch (e) {
@@ -171,42 +171,25 @@ export function usePulseCam() {
       setFinalBpm(bpm > 0 ? bpm : 0);
       setFinalConfidence(0);
     } else {
-      const recentReadings = readings.slice(-15);
-      const sorted = [...recentReadings].sort((a, b) => a.bpm - b.bpm);
-      const confidences = sorted.map((r) => r.confidence);
-      const bpms = sorted.map((r) => r.bpm);
+      const window = readings.slice(-30);
+      const sorted = [...window].sort((a, b) => a.bpm - b.bpm);
+      const totalWeight = sorted.reduce((s, r) => s + r.confidence, 0);
+      const half = totalWeight / 2;
 
-      const cumWeights: number[] = [];
-      let runningTotal = 0;
-      for (const c of confidences) {
-        runningTotal += c;
-        cumWeights.push(runningTotal);
-      }
-      const half = runningTotal / 2;
-
-      let medianIdx = 0;
-      for (let i = 0; i < cumWeights.length; i++) {
-        if (cumWeights[i] >= half) {
+      let cum = 0;
+      let medianIdx = sorted.length - 1;
+      for (let i = 0; i < sorted.length; i++) {
+        cum += sorted[i].confidence;
+        if (cum >= half) {
           medianIdx = i;
           break;
         }
       }
-      const weightedMedian = Math.round(bpms[medianIdx]);
+      const weightedMedian = Math.round(sorted[medianIdx].bpm);
+      const meanConfidence = totalWeight / sorted.length;
 
-      let weightedSum = 0;
-      let weightTotal = 0;
-      for (const r of recentReadings) {
-        weightedSum += r.bpm * r.confidence;
-        weightTotal += r.confidence;
-      }
-      const weightedAvg = weightTotal > 0 ? Math.round(weightedSum / weightTotal) : weightedMedian;
-
-      const avgConfidence = Math.round(
-        (confidences.reduce((a, b) => a + b, 0) / confidences.length) * 100
-      );
-
-      setFinalBpm(weightedAvg);
-      setFinalConfidence(avgConfidence);
+      setFinalBpm(weightedMedian);
+      setFinalConfidence(Math.round(meanConfidence * 100));
     }
 
     setPhase("results");

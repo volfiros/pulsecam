@@ -96,7 +96,7 @@ class SignalProcessor:
         self.low_hz = 0.65
         self.high_hz = 4.0
         self.filter_order = 6
-        self.min_early_samples: int = fps * 5
+        self.min_early_samples: int = fps * 15
         self.min_full_samples: int = fps * 15
         self.motion_threshold: float = 2.0
         self.snr_threshold: float = 0.0

@@ -12,8 +12,9 @@ PulseCam operates on a client-server model connected via WebSockets to enable re
 
 ### 1. Frontend (React / WebGL)
 - **Webcam Capture:** Accesses the user's camera via `getUserMedia` and captures frames at a target 30 FPS.
-- **Client-side Processing:** The frontend utilizes MediaPipe FaceLandmarker locally to track facial landmarks and extract average RGB values from Regions of Interest (ROIs), significantly reducing the payload sent to the backend.
-- **WebSocket Client:** Sends frame payloads containing the average RGB values of the detected cheeks and facial motion metrics.
+- **Camera Lock (best-effort):** After the stream starts, attempts to lock `exposureMode`, `whiteBalanceMode`, and `focusMode` to `manual` via `applyConstraints`. This silently no-ops on cameras/browsers that don't expose these capabilities (e.g. Chrome on macOS for built-in MacBook cams) — works on iPhones via Continuity Camera and on many external webcams.
+- **Client-side Processing:** The frontend uses MediaPipe FaceLandmarker locally to track facial landmarks and extract per-frame mean RGB from three Regions of Interest (forehead, left cheek, right cheek), plus a frame-level luminance and motion metric. This compresses the payload from full frames to 9 RGB scalars per frame.
+- **WebSocket Client:** Streams the per-frame ROI payload to the backend.
 - **UI & Visualization:** Renders the real-time waveform and calculated BPM using `framer-motion` and WebGL shaders for the background.
 
 ### 2. Backend (FastAPI / WebSockets)
@@ -33,23 +34,27 @@ For every frame, we extract several signals from the raw RGB values:
 - **POS (Plane-Orthogonal to Skin):** Another projection method highly robust to motion.
 - **GR & GRGB:** Ratio-based signals that normalize against the red and blue channels.
 
+Before extraction, each signal is detrended with an edge-corrected moving average (the convolution is normalized by local kernel overlap, so the most-recent samples — where the spectrum is read — aren't biased toward zero by the implicit zero-padding of `np.convolve`).
+
 ### 2. Filtering
-Each extracted signal passes through a **Butterworth Bandpass Filter** (typically 0.7 Hz to 3.5 Hz) to isolate frequencies corresponding to human heart rates (42 to 210 BPM).
+Each extracted signal passes through a **6th-order Butterworth bandpass filter (0.65–4.0 Hz)**, applied zero-phase via `sosfiltfilt`. The cutoffs match the rPPG literature consensus (Sasaki et al.; Pirzada et al.) and admit cardiac frequencies from ~42 BPM up to ~240 BPM while rejecting respiration harmonics below and motion drift above.
 
 ### 3. BPM Estimation
-We use two primary methods to estimate the heart rate from the filtered signals:
-- **Welch's Method (Power Spectral Density):** Identifies the dominant frequency in the signal's frequency domain. Good for steady signals.
-- **Autocorrelation:** Measures how well the signal matches a delayed version of itself. Excellent for finding the periodicity in the time domain, even if the signal shape isn't a perfect sine wave.
+Each filtered signal is fed to two estimators in parallel, then the results are fused:
+- **Welch's PSD with Harmonic Product Spectrum (HPS):** The PSD is zero-padded (`nfft = max(8 × nperseg, 1024)`) for ~1.8 BPM bin resolution, then multiplied element-wise by a 2×-decimated copy of itself. This rewards candidate frequencies whose 2nd harmonic has spectral support — true cardiac signals are non-sinusoidal and have measurable harmonics; sub-cardiac noise (e.g. webcam auto-exposure modulation around 0.7–0.9 Hz) usually does not. The peak is then refined by **parabolic interpolation** for sub-bin accuracy.
+- **Autocorrelation:** Picks the strongest peak in the lag region corresponding to 42–180 BPM (rather than the first peak above threshold), then refines via parabolic interpolation. Good at finding periodicity even when the spectrum is smeared.
+- **Fusion:** When both methods agree closely (ratio < 1.15), they're averaged with a confidence boost; mild disagreement uses a plain mean; strong disagreement falls back to the higher-quality method with reduced confidence.
 
 ### 4. Method Selection & Agreement
-- The system evaluates the **Signal-to-Noise Ratio (SNR)** of all 5 extracted signals.
-- It checks if the Welch and Autocorrelation methods **agree** on the heart rate for a given signal.
-- The signal with the highest SNR and highest method agreement is selected as the `best_method`.
+- The system computes the **SNR** of each filtered channel (in-band power vs. residual variance).
+- A cluster-based agreement score finds the best-agreeing subset of the 5 method BPMs (spread within ~12 BPM, weighted by cluster size).
+- When 3+ methods agree, the displayed BPM is an **SNR-weighted average** of the cluster (`weight = exp(SNR_dB)`), so high-SNR channels (typically CHROM/POS under good lighting) dominate over noise-dominated channels.
 
-### 5. Final Calculation
-- A confidence score is generated based on SNR, method agreement, and a motion penalty (derived from face tracking stability).
-- The final displayed BPM is an **Exponential Moving Average (EMA)** of the best recent measurements to provide a stable, readable output.
-- To determine the resting/stabilized heart rate at the end of a session, the frontend calculates a weighted average of the last 15 seconds of measurements.
+### 5. Final Calculation & Calibration
+- A confidence score is generated from SNR, method agreement, and a motion penalty. The SNR threshold gates the entire output — if the best method's SNR is below 0 dB, the system returns `poor_signal` rather than a confident-but-wrong number.
+- The first ~15 seconds are gated as `buffering` so that the Welch spectrum has time to consolidate against ambient noise before any reading is shown. This prevents the early-noise-dominated reading from anchoring the EMA.
+- After calibration, the displayed BPM is a median-filtered + EMA-smoothed version of the per-cycle estimate.
+- At session end, the frontend computes a weighted average over the last 15 seconds of confidence-gated readings as the final reported BPM.
 
 ## 🚢 Deployment Architecture
 The entire application is containerized using Docker. 
