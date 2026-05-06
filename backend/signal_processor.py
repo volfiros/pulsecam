@@ -2,6 +2,7 @@ import numpy as np
 from scipy.signal import butter, sosfiltfilt, welch, find_peaks
 from collections import deque
 import time
+from typing import Optional
 
 
 def _detrend_ma(signal: np.ndarray, window: int) -> np.ndarray:
@@ -88,6 +89,9 @@ class SignalProcessor:
         self.r_buffer: deque[float] = deque(maxlen=self.capacity)
         self.g_buffer: deque[float] = deque(maxlen=self.capacity)
         self.b_buffer: deque[float] = deque(maxlen=self.capacity)
+        self.bg_r_buffer: deque[float] = deque(maxlen=self.capacity)
+        self.bg_g_buffer: deque[float] = deque(maxlen=self.capacity)
+        self.bg_b_buffer: deque[float] = deque(maxlen=self.capacity)
         self._sample_times: deque[float] = deque(maxlen=self.capacity)
         self._motion_buffer: deque[float] = deque(maxlen=self.capacity)
         self._luminance_buffer: deque[float] = deque(maxlen=self.capacity)
@@ -115,6 +119,12 @@ class SignalProcessor:
             "best_method": "",
             "agreement": 0.0,
             "motion": 0.0,
+            "diagnostics": {
+                "effective_fps": round(self._effective_fps, 2),
+                "artifact_bpm": 0.0,
+                "artifact_score": 0.0,
+                "usable_methods": 0,
+            },
         }
         self.just_computed: bool = False
         self._detrend_window = fps * 2
@@ -127,13 +137,80 @@ class SignalProcessor:
             b_vals.append(roi_data["b"])
         return np.mean(r_vals), np.mean(g_vals), np.mean(b_vals)
 
-    def append(self, r: float, g: float, b: float, motion: float = 0.0, luminance: float = 0.0) -> None:
+    def append(
+        self,
+        r: float,
+        g: float,
+        b: float,
+        motion: float = 0.0,
+        luminance: float = 0.0,
+        background: Optional[dict] = None,
+    ) -> None:
         self.r_buffer.append(r)
         self.g_buffer.append(g)
         self.b_buffer.append(b)
+        if background:
+            self.bg_r_buffer.append(float(background["r"]))
+            self.bg_g_buffer.append(float(background["g"]))
+            self.bg_b_buffer.append(float(background["b"]))
+        else:
+            self.bg_r_buffer.append(np.nan)
+            self.bg_g_buffer.append(np.nan)
+            self.bg_b_buffer.append(np.nan)
         self._sample_times.append(time.time())
         self._motion_buffer.append(motion)
         self._luminance_buffer.append(luminance)
+
+    def _diagnostics(self, artifact_bpm: float = 0.0, artifact_score: float = 0.0, usable_methods: int = 0) -> dict:
+        return {
+            "effective_fps": round(float(self._effective_fps), 2),
+            "artifact_bpm": round(float(artifact_bpm), 1),
+            "artifact_score": round(float(artifact_score), 2),
+            "usable_methods": int(usable_methods),
+        }
+
+    def _apply_background_reference(
+        self,
+        r_arr: np.ndarray,
+        g_arr: np.ndarray,
+        b_arr: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        if len(self.bg_r_buffer) != len(r_arr) or len(r_arr) < self.min_full_samples:
+            return r_arr, g_arr, b_arr
+
+        bg_r = np.array(self.bg_r_buffer)
+        bg_g = np.array(self.bg_g_buffer)
+        bg_b = np.array(self.bg_b_buffer)
+        valid = np.isfinite(bg_r) & np.isfinite(bg_g) & np.isfinite(bg_b)
+        if np.count_nonzero(valid) < max(self.min_full_samples, int(len(r_arr) * 0.8)):
+            return r_arr, g_arr, b_arr
+
+        bg_luminance = (bg_r + bg_g + bg_b) / 3.0
+        reference = bg_luminance[valid]
+        ref_mean = np.mean(reference)
+        if ref_mean < 1e-10:
+            return r_arr, g_arr, b_arr
+
+        ref_norm = reference / ref_mean - 1.0
+        denom = float(np.dot(ref_norm, ref_norm))
+        if denom < 1e-10:
+            return r_arr, g_arr, b_arr
+
+        corrected = []
+        for arr in (r_arr, g_arr, b_arr):
+            arr_mean = np.mean(arr[valid])
+            if arr_mean < 1e-10:
+                corrected.append(arr)
+                continue
+            arr_norm = arr[valid] / arr_mean - 1.0
+            beta = float(np.dot(arr_norm, ref_norm) / denom)
+            beta = max(0.0, min(1.5, beta))
+            corr_norm = arr_norm - beta * ref_norm
+            corr_arr = np.array(arr, copy=True)
+            corr_arr[valid] = arr_mean * (1.0 + corr_norm)
+            corrected.append(corr_arr)
+
+        return corrected[0], corrected[1], corrected[2]
 
     def _update_effective_fps(self) -> None:
         if len(self._sample_times) < 20:
@@ -287,6 +364,45 @@ class SignalProcessor:
             return 0.0
         return float(np.var(list(self._luminance_buffer)[-60:]))
 
+    def _compute_luminance_artifact(self) -> tuple[float, float]:
+        if len(self._luminance_buffer) < self.min_full_samples:
+            return 0.0, 0.0
+        luminance = np.array(self._luminance_buffer)
+        lum_signal = extract_green_signal(luminance, self._detrend_window)
+        lum_filtered = self._bandpass_filter(lum_signal)
+        lum_bpm, lum_rating = self._compute_bpm(lum_filtered)
+        lum_snr = self._compute_snr(lum_filtered, lum_signal)
+        return lum_bpm, min(max(lum_rating, 0.0) * max(lum_snr, 0.0) / 3.0, 1.0)
+
+    def _remove_luminance_artifacts(
+        self,
+        method_bpms: dict[str, float],
+        artifact_bpm: float,
+        artifact_score: float,
+    ) -> tuple[dict[str, float], int]:
+        is_low_luminance_artifact = (
+            42.0 <= artifact_bpm <= 65.0
+            and artifact_score >= 0.35
+            and self._get_recent_luminance_var() >= 2.0
+        )
+        if not is_low_luminance_artifact:
+            return method_bpms, 0
+
+        artifact_window = 8.0
+        clean_bpms = {
+            name: bpm
+            for name, bpm in method_bpms.items()
+            if abs(bpm - artifact_bpm) > artifact_window
+        }
+        artifact_matches = len(method_bpms) - len(clean_bpms)
+        clean_agreement, clean_count, _ = self._compute_agreement(clean_bpms)
+
+        if clean_count >= 2 and clean_agreement > 0.2:
+            return clean_bpms, artifact_matches
+        if artifact_matches >= 2:
+            return clean_bpms, artifact_matches
+        return method_bpms, artifact_matches
+
     def _compute_agreement(self, method_bpms: dict[str, float]) -> tuple[float, int, list[float]]:
         valid_bpms = sorted([v for v in method_bpms.values() if 42.0 <= v <= 180.0])
         if len(valid_bpms) < 2:
@@ -323,13 +439,14 @@ class SignalProcessor:
         rois = frame_data.get("rois", {})
         motion = frame_data.get("motion", 0.0)
         luminance = frame_data.get("luminance", 0.0)
+        background = frame_data.get("background")
 
         if not rois:
             self.just_computed = False
             return self._last_result
 
         r, g, b = self._average_rois(rois)
-        self.append(r, g, b, motion, luminance)
+        self.append(r, g, b, motion, luminance, background)
         self._update_effective_fps()
 
         n = len(self.r_buffer)
@@ -339,6 +456,7 @@ class SignalProcessor:
                 "bpm": 0, "raw_bpm": 0.0, "confidence": 0.0,
                 "waveform": [], "status": "buffering",
                 "methods": {}, "best_method": "", "agreement": 0.0, "motion": motion,
+                "diagnostics": self._diagnostics(),
             }
             return self._last_result
 
@@ -353,6 +471,7 @@ class SignalProcessor:
         r_arr = np.array(self.r_buffer)
         g_arr = np.array(self.g_buffer)
         b_arr = np.array(self.b_buffer)
+        r_arr, g_arr, b_arr = self._apply_background_reference(r_arr, g_arr, b_arr)
 
         signals = {
             "green": extract_green_signal(g_arr, self._detrend_window),
@@ -374,6 +493,9 @@ class SignalProcessor:
             method_results[name] = {"bpm": round(bpm, 1), "snr": round(snr, 2), "rating": rating}
             if 42.0 <= bpm <= 180.0:
                 method_bpms[name] = bpm
+
+        artifact_bpm, artifact_score = self._compute_luminance_artifact()
+        method_bpms, artifact_matches = self._remove_luminance_artifacts(method_bpms, artifact_bpm, artifact_score)
 
         best_method = ""
         best_snr = -float("inf")
@@ -402,6 +524,8 @@ class SignalProcessor:
             bpm_rating = method_results[best_method]["rating"]
             snr_score = min(max(best_snr, 0.0) / 3.0, 1.0)
             confidence = min(snr_score * agreement * motion_penalty * min(bpm_rating * 3.5, 1.0), 1.0)
+            if artifact_matches >= 2 and n_agreeing <= 1:
+                confidence *= 0.25
             bpm = raw_bpm
         else:
             bpm = 0.0
@@ -442,5 +566,6 @@ class SignalProcessor:
             "best_method": best_method,
             "agreement": round(agreement, 2),
             "motion": round(recent_motion, 2),
+            "diagnostics": self._diagnostics(artifact_bpm, artifact_score, len(method_bpms)),
         }
         return self._last_result

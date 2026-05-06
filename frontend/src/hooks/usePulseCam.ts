@@ -85,12 +85,15 @@ export function usePulseCam() {
         setWaveform(data.waveform);
         setStatus(data.status);
 
-        if (import.meta.env.DEV && data.best_method) {
+        if (import.meta.env.DEV) {
           const methodsStr = Object.entries(data.methods)
             .map(([k, v]) => `${k}=${v.bpm.toFixed(0)}/${v.snr.toFixed(1)}dB`)
             .join(" ");
+          const diagnosticsStr = data.diagnostics
+            ? `fps=${data.diagnostics.effective_fps.toFixed(1)} artifact=${data.diagnostics.artifact_bpm.toFixed(0)}/${data.diagnostics.artifact_score.toFixed(2)} usable=${data.diagnostics.usable_methods}`
+            : "";
           console.log(
-            `[PulseCam] BPM=${data.raw_bpm} best=${data.best_method} agr=${data.agreement} conf=${data.confidence.toFixed(2)} motion=${data.motion.toFixed(2)} ${methodsStr} ${data.status}`
+            `[PulseCam] BPM=${data.raw_bpm} best=${data.best_method} agr=${data.agreement} conf=${data.confidence.toFixed(2)} motion=${data.motion.toFixed(2)} ${diagnosticsStr} ${methodsStr} ${data.status}`
           );
         }
 

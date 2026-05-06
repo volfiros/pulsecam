@@ -37,4 +37,10 @@ export interface WSResponse {
   best_method: string;
   agreement: number;
   motion: number;
+  diagnostics?: {
+    effective_fps: number;
+    artifact_bpm: number;
+    artifact_score: number;
+    usable_methods: number;
+  };
 }

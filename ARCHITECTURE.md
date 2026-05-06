@@ -13,7 +13,7 @@ PulseCam operates on a client-server model connected via WebSockets to enable re
 ### 1. Frontend (React / WebGL)
 - **Webcam Capture:** Accesses the user's camera via `getUserMedia` and captures frames at a target 30 FPS.
 - **Camera Lock (best-effort):** After the stream starts, attempts to lock `exposureMode`, `whiteBalanceMode`, and `focusMode` to `manual` via `applyConstraints`. This silently no-ops on cameras/browsers that don't expose these capabilities (e.g. Chrome on macOS for built-in MacBook cams) — works on iPhones via Continuity Camera and on many external webcams.
-- **Client-side Processing:** The frontend uses MediaPipe FaceLandmarker locally to track facial landmarks and extract per-frame mean RGB from three Regions of Interest (forehead, left cheek, right cheek), plus a frame-level luminance and motion metric. This compresses the payload from full frames to 9 RGB scalars per frame.
+- **Client-side Processing:** The frontend uses MediaPipe FaceLandmarker locally to track facial landmarks and extract trimmed-mean RGB from three skin Regions of Interest (forehead, left cheek, right cheek), plus a non-skin background reference, frame-level luminance, and motion metric. This compresses each frame to compact color statistics instead of streaming video.
 - **WebSocket Client:** Streams the per-frame ROI payload to the backend.
 - **UI & Visualization:** Renders the real-time waveform and calculated BPM using `framer-motion` and WebGL shaders for the background.
 
@@ -21,14 +21,14 @@ PulseCam operates on a client-server model connected via WebSockets to enable re
 - **WebSocket Server:** Receives continuous streams of RGB data from the frontend.
 - **Signal Processor (`SignalProcessor`):** Maintains a rolling buffer of RGB values and timestamps. It dynamically calculates the effective FPS to ensure accurate frequency analysis.
 - **Extraction Pipeline:** Applies 5 different rPPG extraction algorithms in parallel.
-- **Response:** Sends back the calculated BPM, signal confidence, and current status (`buffering`, `measuring`, etc.) to the frontend.
+- **Response:** Sends back the calculated BPM, signal confidence, current status (`buffering`, `measuring`, etc.), and debug diagnostics such as effective FPS and luminance-artifact score.
 
 ## 🧬 Signal Processing Workflow
 
 The core of PulseCam is the `SignalProcessor`, which isolates the tiny color changes in the skin from background noise and motion artifacts.
 
 ### 1. Signal Extraction
-For every frame, we extract several signals from the raw RGB values:
+For every frame, skin RGB is first normalized against the optional non-skin background reference. The background signal is regressed out of each skin color channel to reduce shared auto-exposure and room-light modulation before rPPG extraction. We then extract several signals from the corrected RGB values:
 - **Green Channel:** The simplest rPPG signal, as hemoglobin absorbs green light effectively.
 - **Chrominance (CHROM):** Projects RGB into a chrominance space to eliminate specular reflection (lighting changes).
 - **POS (Plane-Orthogonal to Skin):** Another projection method highly robust to motion.
@@ -48,6 +48,7 @@ Each filtered signal is fed to two estimators in parallel, then the results are 
 ### 4. Method Selection & Agreement
 - The system computes the **SNR** of each filtered channel (in-band power vs. residual variance).
 - A cluster-based agreement score finds the best-agreeing subset of the 5 method BPMs (spread within ~12 BPM, weighted by cluster size).
+- The skin luminance buffer is analyzed as an artifact reference. If a strong 42–65 BPM luminance artifact is present, methods tracking that artifact are removed before final selection; if too few clean methods remain, the system reports `poor_signal`.
 - When 3+ methods agree, the displayed BPM is an **SNR-weighted average** of the cluster (`weight = exp(SNR_dB)`), so high-SNR channels (typically CHROM/POS under good lighting) dominate over noise-dominated channels.
 
 ### 5. Final Calculation & Calibration

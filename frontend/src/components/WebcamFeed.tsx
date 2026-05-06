@@ -11,6 +11,7 @@ export interface FramePayload {
   };
   motion: number;
   luminance: number;
+  background?: { r: number; g: number; b: number };
 }
 
 interface WebcamFeedProps {
@@ -145,8 +146,8 @@ export default function WebcamFeed({ onFrame, onROIsDetected, onCameraError, onV
 
         if (face) {
           const { landmarks, motion } = face;
-          const { rois, luminance } = extractMultiROI(ctx, landmarks, canvas.width, canvas.height);
-          onFrame({ rois, motion, luminance });
+          const { rois, luminance, background } = extractMultiROI(ctx, landmarks, canvas.width, canvas.height);
+          onFrame({ rois, motion, luminance, background });
           onROIsDetected(computeROIBox(landmarks, canvas.width, canvas.height));
         } else {
           onROIsDetected(null);

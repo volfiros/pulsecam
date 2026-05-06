@@ -33,7 +33,7 @@ Simply sit in front of your camera, and PulseCam tracks your face, isolates the 
 - **Backend:** Python, FastAPI, WebSockets
 - **Core Models & Algorithms:**
   - **MediaPipe FaceLandmarker:** Real-time facial landmark detection to isolate stable regions of interest (forehead + cheeks).
-  - **SciPy & NumPy:** 5 parallel rPPG extractors (Green, CHROM, POS, GR, GRGB), 6th-order Butterworth bandpass (0.65–4.0 Hz), Welch's PSD with Harmonic Product Spectrum + parabolic peak interpolation, autocorrelation with global-peak detection, and SNR-weighted fusion across methods.
+  - **SciPy & NumPy:** 5 parallel rPPG extractors (Green, CHROM, POS, GR, GRGB), background-reference exposure cancellation, 6th-order Butterworth bandpass (0.65–4.0 Hz), Welch's PSD with Harmonic Product Spectrum + parabolic peak interpolation, autocorrelation with global-peak detection, and artifact-aware fusion across methods.
 
 ## 🚀 Live Demo
 Try it out directly in your browser without installing anything!
@@ -77,7 +77,6 @@ Webcam rPPG is sensitive to ambient conditions. For accurate readings:
 - On Apple silicon, **Continuity Camera (iPhone as webcam)** dramatically outperforms the built-in MacBook camera — the iPhone exposes manual exposure controls, which most webcams (including M-series Macs in Chrome) do not.
 
 ## 📈 Future Improvements
-- **Background-reference noise cancellation:** Sample a non-skin region of the frame to regress out shared auto-exposure modulation when manual exposure isn't available.
 - **Motion Artifact Reduction:** Implement better independent component analysis (ICA) to separate motion from the pulse signal.
 - **Mobile Optimization:** Enhance camera access and processing efficiency on mobile devices.
 - **HRV (Heart Rate Variability):** Extract inter-beat intervals to measure stress levels.
